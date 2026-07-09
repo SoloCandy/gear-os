@@ -87,13 +87,23 @@ gears by design.
 
 ---
 
+## Ratio Ranges
+
+Confirmed in-game (Race transmission, sliders dragged to their stops):
+
+| Range | Min | Max |
+|---|---|---|
+| Per-gear ratio | 0.48 | 6.00 |
+| Final Drive | 2.20 | 6.10 |
+
+If a solve can't fit both the requested top speed and every ratio inside these ranges,
+GEAR.OS clamps to what's achievable and reports the actual top speed you'll get instead —
+see [`GEAR_RATIO_MIN/MAX` and `FINAL_DRIVE_MIN/MAX`](index.html) in `index.html`.
+
+---
+
 ## Known Limitations
 
-- **Ratio ranges are placeholders.** Forza's per-gear ratio range is commonly cited as
-  0.48–6.00; GEAR.OS currently assumes the Final Drive slider shares that same range.
-  This has **not** been verified in-game — confirm against your actual tuning menu before
-  trusting output near either boundary, and update `GEAR_RATIO_MIN/MAX` and
-  `FINAL_DRIVE_MIN/MAX` in `index.html` if they differ.
 - **No power/drag curve.** Only peak HP/torque and their RPMs are used — GEAR.OS can't
   tell you whether the car actually has enough power to *reach* redline in top gear
   before drag caps it out at a lower speed. Treat "Desired Top Speed" as a target to

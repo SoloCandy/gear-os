@@ -102,12 +102,9 @@ window.addEventListener('DOMContentLoaded',function(){
 const {useState,useMemo}=React;
 
 // ---- Forza ratio limits ----
-// Per-gear ratio range is the commonly cited Forza tuning-menu bound.
-// Final Drive's own slider range is NOT necessarily the same — unverified here,
-// currently mirrored to the per-gear range as a placeholder. Confirm in-game
-// before trusting output near either boundary.
+// Confirmed in-game (Race transmission, sliders dragged to their stops).
 const GEAR_RATIO_MIN=0.48, GEAR_RATIO_MAX=6.00;
-const FINAL_DRIVE_MIN=0.48, FINAL_DRIVE_MAX=6.00;
+const FINAL_DRIVE_MIN=2.20, FINAL_DRIVE_MAX=6.10;
 
 const IN_PER_MILE=63360;
 
