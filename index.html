@@ -59,6 +59,16 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
     transition:border-color .12s}
 .finput:focus{border-color:#e2e8f055}
 .finput:disabled{color:#6b7280;background:#080b12}
+.sli{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:1.5px;
+     outline:none;margin-top:8px;cursor:pointer;display:block;border:none;padding:10px 0;
+     box-sizing:content-box;background-clip:content-box}
+.sli::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;background:#e2e8f0;
+  border-radius:50%;cursor:pointer;margin-top:-5.5px;transition:transform .15s;
+  box-shadow:0 0 0 2px #02061799}
+.sli::-webkit-slider-thumb:hover{transform:scale(1.2)}
+.sli::-moz-range-thumb{width:14px;height:14px;background:#e2e8f0;border-radius:50%;border:none;
+  cursor:pointer;box-shadow:0 0 0 2px #02061799}
+.sli:disabled{cursor:not-allowed;opacity:.4}
 .hint{font-size:10px;color:#6b7280;margin-top:4px}
 .ro{padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:2px;
     display:flex;justify-content:space-between;align-items:baseline}
@@ -196,7 +206,9 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   return {finalDrive,gears,shifts,feasible:!topSpeedMissed,actualTopSpeed,peakHpRpm,peakTorqueRpm};
 }
 
-function NumField({label,value,onChange,autoValue,auto,onAutoChange,min,step,unit}){
+function NumField({label,value,onChange,autoValue,auto,onAutoChange,min,max,step,unit}){
+  const dispVal=auto?round(autoValue,0):value;
+  const pct=max>min?clamp((dispVal-min)/(max-min)*100,0,100):0;
   return (
     <div className="field">
       <label>
@@ -210,11 +222,24 @@ function NumField({label,value,onChange,autoValue,auto,onAutoChange,min,step,uni
         className="finput"
         type="number"
         min={min}
+        max={max}
         step={step||1}
         disabled={auto}
-        value={auto?round(autoValue,0):value}
+        value={dispVal}
         onChange={e=>onChange(Number(e.target.value))}
       />
+      {max!=null&&
+        <input
+          className="sli"
+          type="range"
+          min={min}
+          max={max}
+          step={step||1}
+          disabled={auto}
+          value={clamp(dispVal,min,max)}
+          style={{background:`linear-gradient(to right,#e2e8f0 ${pct}%,#1e293b ${pct}%)`}}
+          onChange={e=>onChange(Number(e.target.value))}
+        />}
       {unit&&<div className="hint">{unit}</div>}
     </div>
   );
@@ -260,25 +285,26 @@ function App(){
           <div className="card">
             <div className="ch">Engine</div>
             <div className="cb">
-              <NumField label="Max RPM (Redline)" value={maxRpm} onChange={setMaxRpm} min={4000} step={100}/>
+              <NumField label="Max RPM (Redline)" value={maxRpm} onChange={setMaxRpm} min={4000} max={12000} step={100}/>
               <NumField label="Peak HP RPM" value={hpRpm} onChange={setHpRpm}
-                auto={autoHp} onAutoChange={setAutoHp} autoValue={maxRpm*0.90} min={1000} step={100}
+                auto={autoHp} onAutoChange={setAutoHp} autoValue={maxRpm*0.90} min={1000} max={maxRpm} step={100}
                 unit={autoHp?'Auto: 90% of Max RPM':undefined}/>
               <NumField label="Peak Torque RPM" value={torqueRpm} onChange={setTorqueRpm}
-                auto={autoTorque} onAutoChange={setAutoTorque} autoValue={maxRpm*0.65} min={500} step={100}
+                auto={autoTorque} onAutoChange={setAutoTorque} autoValue={maxRpm*0.65} min={500} max={peakHpRpm} step={100}
                 unit={autoTorque?'Auto: 65% of Max RPM':undefined}/>
             </div>
           </div>
           <div className="card">
             <div className="ch">Gearbox &amp; Chassis</div>
             <div className="cb">
-              <NumField label="Gear Count" value={gearCount} onChange={setGearCount} min={2} step={1}/>
+              <NumField label="Gear Count" value={gearCount} onChange={setGearCount} min={2} max={10} step={1}/>
               <NumField label="Desired Top Speed"
                 value={metricUnits?round(topSpeed*KMH_PER_MPH,0):topSpeed}
                 onChange={v=>setTopSpeed(metricUnits?v/KMH_PER_MPH:v)}
-                min={metricUnits?round(30*KMH_PER_MPH,0):30} step={1}
+                min={metricUnits?round(30*KMH_PER_MPH,0):30}
+                max={metricUnits?round(300*KMH_PER_MPH,0):300} step={1}
                 unit={metricUnits?'km/h':'mph'}/>
-              <NumField label="Tire Radius" value={tireRadius} onChange={setTireRadius} min={125} step={1} unit="mm (rolling radius)"/>
+              <NumField label="Tire Radius" value={tireRadius} onChange={setTireRadius} min={125} max={500} step={1} unit="mm (rolling radius)"/>
             </div>
           </div>
         </div>
