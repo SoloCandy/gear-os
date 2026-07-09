@@ -121,18 +121,18 @@ const KMH_PER_MPH=1.60934;
 function round(n,d){const m=Math.pow(10,d||0);return Math.round(n*m)/m;}
 function clamp(n,lo,hi){return Math.min(hi,Math.max(lo,n));}
 
-// mph = Engine_RPM * pi * TireDiameter(mm) * 60 / (1609344 * Ratio * FinalDrive)
-// (wheel RPM = engine RPM / (ratio*FD); wheel circumference = pi*D; convert mm/min -> mph)
-function speedAtRpm(rpm,ratio,finalDrive,tireDiameter){
-  return rpm*Math.PI*tireDiameter*60/(MM_PER_MILE*ratio*finalDrive);
+// mph = Engine_RPM * 2*pi * TireRadius(mm) * 60 / (1609344 * Ratio * FinalDrive)
+// (wheel RPM = engine RPM / (ratio*FD); wheel circumference = 2*pi*r; convert mm/min -> mph)
+function speedAtRpm(rpm,ratio,finalDrive,tireRadius){
+  return rpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*ratio*finalDrive);
 }
 
-function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireDiameter}){
+function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireRadius}){
   const N=gearCount;
   if(!(N>=2&&N<=10))return {error:'Gear count must be between 2 and 10.'};
   if(!(maxRpm>0))return {error:'Max RPM must be positive.'};
   if(!(topSpeedMph>0))return {error:'Desired top speed must be positive.'};
-  if(!(tireDiameter>0))return {error:'Tire diameter must be positive.'};
+  if(!(tireRadius>0))return {error:'Tire radius must be positive.'};
   if(!(peakTorqueRpm>0&&peakHpRpm>peakTorqueRpm&&maxRpm>=peakHpRpm)){
     return {error:'RPMs must satisfy 0 < Peak Torque RPM < Peak HP RPM ≤ Max RPM.'};
   }
@@ -155,7 +155,7 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   }
 
   // Solve Final Drive so top gear hits the desired top speed at Max RPM.
-  const fdRaw=maxRpm*Math.PI*tireDiameter*60/(MM_PER_MILE*rawRatio[N]*topSpeedMph);
+  const fdRaw=maxRpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*rawRatio[N]*topSpeedMph);
 
   // Normalize: find a uniform scale s (ratio[g]*=s, FD/=s) that fits both the
   // per-gear range and the Final Drive range. This is safe because the product
@@ -174,7 +174,7 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   const gears=[];
   for(let g=1;g<=N;g++){
     const ratio=clamp(rawRatio[g]*s,GEAR_RATIO_MIN,GEAR_RATIO_MAX);
-    gears.push({gear:g,ratio,speedAtRedline:speedAtRpm(maxRpm,ratio,finalDrive,tireDiameter)});
+    gears.push({gear:g,ratio,speedAtRedline:speedAtRpm(maxRpm,ratio,finalDrive,tireRadius)});
   }
 
   // Whichever of Final Drive or a gear ratio hit its range limit, the real
@@ -225,7 +225,7 @@ function App(){
   const [torqueRpm,setTorqueRpm]=useState(5200);
   const [gearCount,setGearCount]=useState(6);
   const [topSpeed,setTopSpeed]=useState(180); // canonical: mph
-  const [tireDiameter,setTireDiameter]=useState(660); // canonical: mm
+  const [tireRadius,setTireRadius]=useState(330); // canonical: mm
 
   const dispSpeed=mph=>metricUnits?`${round(mph*KMH_PER_MPH,1)} km/h`:`${round(mph,1)} mph`;
 
@@ -233,8 +233,8 @@ function App(){
   const peakTorqueRpm=autoTorque?round(maxRpm*0.65):torqueRpm;
 
   const result=useMemo(()=>computeGearing({
-    maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireDiameter
-  }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireDiameter]);
+    maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireRadius
+  }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius]);
 
   return (
     <React.Fragment>
@@ -274,7 +274,7 @@ function App(){
                 onChange={v=>setTopSpeed(metricUnits?v/KMH_PER_MPH:v)}
                 min={metricUnits?round(30*KMH_PER_MPH,0):30} step={1}
                 unit={metricUnits?'km/h':'mph'}/>
-              <NumField label="Tire Diameter" value={tireDiameter} onChange={setTireDiameter} min={250} step={1} unit="mm (full rolling diameter)"/>
+              <NumField label="Tire Radius" value={tireRadius} onChange={setTireRadius} min={125} step={1} unit="mm (rolling radius)"/>
             </div>
           </div>
         </div>
@@ -297,7 +297,7 @@ function App(){
                   {' '}{GEAR_RATIO_MIN.toFixed(2)}–{GEAR_RATIO_MAX.toFixed(2)} gear ratio and
                   {' '}{FINAL_DRIVE_MIN.toFixed(2)}–{FINAL_DRIVE_MAX.toFixed(2)} Final Drive ranges —
                   top gear actually reaches {dispSpeed(result.actualTopSpeed)} at redline instead.
-                  Try a different top speed, gear count, or tire diameter.
+                  Try a different top speed, gear count, or tire radius.
                 </div>}
             </div>
 

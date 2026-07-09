@@ -5,7 +5,7 @@
 
 A single-file gear ratio calculator for **Forza Horizon** and **Forza Motorsport**, built
 around a **Variable Power Band** gearing philosophy. Enter your engine's RPM range, gear
-count, target top speed, and tire diameter — GEAR.OS outputs a Final Drive and per-gear
+count, target top speed, and tire radius — GEAR.OS outputs a Final Drive and per-gear
 ratios ready to enter in-game, plus a shift analysis showing exactly where each shift lands.
 
 A companion tool to [SUSP.OS](https://github.com/solocandy/susp-os).
@@ -71,8 +71,9 @@ gears by design.
 ---
 
 An **IMP / MET** toggle in the top-right of the header switches Desired Top Speed and every
-displayed speed between mph and km/h. Tire Diameter always stays in mm regardless of the
-toggle, matching Forza's own tuning menu.
+displayed speed between mph and km/h. Tire Radius always stays in mm regardless of the
+toggle, matching Forza's own tuning menu (and [SUSP.OS](https://github.com/solocandy/susp-os),
+which also works in tire *radius*, not diameter).
 
 ## Inputs
 
@@ -83,7 +84,7 @@ toggle, matching Forza's own tuning menu.
 | Peak Torque RPM | AUTO defaults to 65% of Max RPM if you don't know the exact figure |
 | Gear Count | 2–10 |
 | Desired Top Speed | mph or km/h (IMP/MET toggle), at Max RPM in top gear |
-| Tire Diameter | mm, full rolling diameter (not rim size) — always mm, unaffected by IMP/MET |
+| Tire Radius | mm, rolling radius (not diameter, not rim size) — always mm, unaffected by IMP/MET |
 
 ## Outputs
 
