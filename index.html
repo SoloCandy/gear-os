@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<!--
+  GEAR.OS — Forza Gear Ratio Calculator
+  "Variable Power Band" gearing: interpolates each shift's landing RPM from the
+  torque peak (low gears) toward the HP peak (high gears), then back-solves
+  ratios from top gear down. See README.md for the full method.
+  MIT License
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>GEAR.OS</title>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.4/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--font-mono:'JetBrains Mono','Courier New',monospace;}
+html{height:100%;height:-webkit-fill-available;height:100dvh;}
+body{background:#020617;color:#cbd5e1;font-family:var(--font-mono);min-height:100%;
+     -webkit-text-size-adjust:100%;}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:#0a0f1a}
+::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px}
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+.wrap{max-width:1100px;margin:0 auto;padding:24px}
+.hdr{display:flex;align-items:baseline;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.hdr h1{font-size:16px;letter-spacing:3px;color:#e2e8f0}
+.hdr span{font-size:11px;color:#6b7280}
+.grid{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start}
+@media(max-width:768px){.grid{grid-template-columns:1fr}.wrap{padding:16px}}
+.card{background:#020617;border:1px solid #1e293b;border-radius:2px;overflow:hidden;margin-bottom:16px}
+.ch{padding:6px 10px;background:#0a0f1a;border-bottom:1px solid #1e293b;
+    font-size:10px;color:#9ca3af;letter-spacing:2px;text-transform:uppercase}
+.cb{padding:12px}
+.field{margin-bottom:12px}
+.field:last-child{margin-bottom:0}
+.field label{display:flex;justify-content:space-between;align-items:center;
+    font-size:10px;color:#9ca3af;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.field label .auto-tog{text-transform:none;letter-spacing:0;font-size:10px;color:#6b7280;
+    cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px}
+.field label .auto-tog input{cursor:pointer}
+.finput{width:100%;background:#0a0f1a;border:1px solid #1e293b;border-radius:2px;
+    color:#e2e8f0;font-family:var(--font-mono);font-size:14px;padding:7px 8px;outline:none;
+    transition:border-color .12s}
+.finput:focus{border-color:#e2e8f055}
+.finput:disabled{color:#6b7280;background:#080b12}
+.hint{font-size:10px;color:#6b7280;margin-top:4px}
+.ro{padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:2px;
+    display:flex;justify-content:space-between;align-items:baseline}
+.rl{font-size:10px;color:#9ca3af;letter-spacing:1px;text-transform:uppercase}
+.rv{font-size:22px;font-weight:700;color:#e2e8f0}
+.ru{font-size:10px;color:#6b7280;margin-left:4px}
+.gtable{width:100%;border-collapse:collapse;font-size:12px}
+.gtable th{text-align:right;color:#6b7280;font-size:10px;letter-spacing:1px;
+    text-transform:uppercase;padding:6px 10px;border-bottom:1px solid #1e293b;white-space:nowrap}
+.gtable th:first-child,.gtable td:first-child{text-align:left}
+.gtable td{padding:6px 10px;border-bottom:1px solid #0f172a;color:#cbd5e1;text-align:right;
+    white-space:nowrap}
+.gtable tr:last-child td{border-bottom:none}
+.pbar{display:inline-block;width:60px;height:5px;background:#0f172a;border-radius:2px;
+    overflow:hidden;vertical-align:middle;margin-right:6px}
+.pbar-fill{display:block;height:100%;background:#e2e8f0}
+.warn{color:#f59e0b;font-size:11px;padding:8px 10px;background:#1c1408;
+    border:1px solid #78350f;border-radius:2px;margin:10px 12px 0}
+.err{color:#f87171;font-size:12px;padding:16px;}
+</style>
+</head>
+<body>
+<div id="root">
+  <!-- Shown only if React fails to mount -->
+  <div id="pre-load" style="padding:24px;color:#6b7280;font-family:var(--font-mono);font-size:12px;background:#020617;min-height:100vh">
+    <div style="color:#e2e8f0;font-size:14px;margin-bottom:8px">GEAR.OS</div>
+    <div style="margin-bottom:16px">Loading...</div>
+  </div>
+</div>
+<script>
+// Global error catcher — fires before React/Babel, shows error on blank screen
+window.onerror=function(msg,src,line,col,err){
+  var d=document.getElementById('pre-load');
+  if(d){
+    d.innerHTML='<div style="color:#e2e8f0;font-size:14px;margin-bottom:8px">GEAR.OS — Failed to load</div>'
+      +'<div style="color:#6b7280;margin-bottom:12px">JavaScript error on line '+line+'</div>'
+      +'<div style="background:#0f172a;padding:12px;border-radius:4px;color:#ef4444;word-break:break-all;line-height:1.6">'+(msg||'Unknown error')+'</div>'
+      +'<button onclick="location.reload()" style="margin-top:16px;padding:8px 16px;background:#0f172a;border:1px solid #1e293b;color:#e2e8f0;border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:12px">RELOAD</button>';
+  }
+};
+window.addEventListener('DOMContentLoaded',function(){
+  setTimeout(function(){
+    var d=document.getElementById('pre-load');
+    if(d&&d.innerHTML.indexOf('Loading')>-1)d.style.display='none';
+  },5000);
+});
+</script>
+<script id="app-source" type="text/plain">
+const {useState,useMemo}=React;
+
+// ---- Forza ratio limits ----
+// Per-gear ratio range is the commonly cited Forza tuning-menu bound.
+// Final Drive's own slider range is NOT necessarily the same — unverified here,
+// currently mirrored to the per-gear range as a placeholder. Confirm in-game
+// before trusting output near either boundary.
+const GEAR_RATIO_MIN=0.48, GEAR_RATIO_MAX=6.00;
+const FINAL_DRIVE_MIN=0.48, FINAL_DRIVE_MAX=6.00;
+
+const IN_PER_MILE=63360;
+
+function round(n,d){const m=Math.pow(10,d||0);return Math.round(n*m)/m;}
+function clamp(n,lo,hi){return Math.min(hi,Math.max(lo,n));}
+
+// mph = Engine_RPM * pi * TireDiameter(in) * 60 / (63360 * Ratio * FinalDrive)
+// (wheel RPM = engine RPM / (ratio*FD); wheel circumference = pi*D; convert in/min -> mph)
+function speedAtRpm(rpm,ratio,finalDrive,tireDiameter){
+  return rpm*Math.PI*tireDiameter*60/(IN_PER_MILE*ratio*finalDrive);
+}
+
+function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireDiameter}){
+  const N=gearCount;
+  if(!(N>=2&&N<=10))return {error:'Gear count must be between 2 and 10.'};
+  if(!(maxRpm>0))return {error:'Max RPM must be positive.'};
+  if(!(topSpeedMph>0))return {error:'Desired top speed must be positive.'};
+  if(!(tireDiameter>0))return {error:'Tire diameter must be positive.'};
+  if(!(peakTorqueRpm>0&&peakHpRpm>peakTorqueRpm&&maxRpm>=peakHpRpm)){
+    return {error:'RPMs must satisfy 0 < Peak Torque RPM < Peak HP RPM ≤ Max RPM.'};
+  }
+
+  // Target landing RPM for each shift g -> g+1 (g = 1..N-1), interpolated linearly
+  // from the torque peak (first shift) to the HP peak (last shift).
+  const landingRpm=new Array(N+1).fill(0);
+  for(let g=1;g<N;g++){
+    const t=(N===2)?1:(g-1)/(N-2);
+    landingRpm[g]=peakTorqueRpm+t*(peakHpRpm-peakTorqueRpm);
+  }
+
+  // Back-solve ratios from top gear (arbitrarily set to 1.00) down to 1st.
+  // Scale-invariant: only the ratio *between* gears matters here, so the
+  // absolute scale (and therefore Final Drive) can be fixed independently below.
+  const rawRatio=new Array(N+1).fill(0);
+  rawRatio[N]=1.00;
+  for(let g=N-1;g>=1;g--){
+    rawRatio[g]=rawRatio[g+1]*(maxRpm/landingRpm[g]);
+  }
+
+  // Solve Final Drive so top gear hits the desired top speed at Max RPM.
+  const fdRaw=maxRpm*Math.PI*tireDiameter*60/(IN_PER_MILE*rawRatio[N]*topSpeedMph);
+
+  // Normalize: find a uniform scale s (ratio[g]*=s, FD/=s) that fits both the
+  // per-gear range and the Final Drive range. This is safe because the product
+  // ratio*FD (and thus every RPM/speed relationship) is invariant under it.
+  const sMax=Math.min(GEAR_RATIO_MAX/rawRatio[1],fdRaw/FINAL_DRIVE_MIN);
+  const sMin=Math.max(GEAR_RATIO_MIN/rawRatio[N],fdRaw/FINAL_DRIVE_MAX);
+  let feasible=true, s=1;
+  if(sMin<=sMax){
+    s=clamp(1,sMin,sMax);
+  }else{
+    feasible=false;
+    s=clamp(1,GEAR_RATIO_MIN/rawRatio[N],GEAR_RATIO_MAX/rawRatio[1]);
+  }
+
+  const finalDrive=clamp(fdRaw/s,FINAL_DRIVE_MIN,FINAL_DRIVE_MAX);
+  const gears=[];
+  for(let g=1;g<=N;g++){
+    const ratio=clamp(rawRatio[g]*s,GEAR_RATIO_MIN,GEAR_RATIO_MAX);
+    gears.push({gear:g,ratio,speedAtRedline:speedAtRpm(maxRpm,ratio,finalDrive,tireDiameter)});
+  }
+
+  // Whichever of Final Drive or a gear ratio hit its range limit, the real
+  // signal for the user is whether top gear still reaches the requested top
+  // speed at redline — check that directly rather than trusting `feasible`.
+  const actualTopSpeed=gears[N-1].speedAtRedline;
+  const topSpeedMissed=Math.abs(actualTopSpeed-topSpeedMph)>Math.max(0.5,topSpeedMph*0.01);
+
+  const shifts=[];
+  for(let g=1;g<N;g++){
+    const pct=clamp((landingRpm[g]-peakTorqueRpm)/(maxRpm-peakTorqueRpm)*100,0,100);
+    shifts.push({from:g,to:g+1,landingRpm:landingRpm[g],powerBandPct:pct});
+  }
+
+  return {finalDrive,gears,shifts,feasible:!topSpeedMissed,actualTopSpeed,peakHpRpm,peakTorqueRpm};
+}
+
+function NumField({label,value,onChange,autoValue,auto,onAutoChange,min,step,unit}){
+  return (
+    <div className="field">
+      <label>
+        <span>{label}</span>
+        {onAutoChange&&
+          <span className="auto-tog" onClick={()=>onAutoChange(!auto)}>
+            <input type="checkbox" checked={auto} onChange={()=>onAutoChange(!auto)}/>AUTO
+          </span>}
+      </label>
+      <input
+        className="finput"
+        type="number"
+        min={min}
+        step={step||1}
+        disabled={auto}
+        value={auto?round(autoValue,0):value}
+        onChange={e=>onChange(Number(e.target.value))}
+      />
+      {unit&&<div className="hint">{unit}</div>}
+    </div>
+  );
+}
+
+function App(){
+  const [maxRpm,setMaxRpm]=useState(8000);
+  const [autoHp,setAutoHp]=useState(true);
+  const [hpRpm,setHpRpm]=useState(7200);
+  const [autoTorque,setAutoTorque]=useState(true);
+  const [torqueRpm,setTorqueRpm]=useState(5200);
+  const [gearCount,setGearCount]=useState(6);
+  const [topSpeed,setTopSpeed]=useState(180);
+  const [tireDiameter,setTireDiameter]=useState(26);
+
+  const peakHpRpm=autoHp?round(maxRpm*0.90):hpRpm;
+  const peakTorqueRpm=autoTorque?round(maxRpm*0.65):torqueRpm;
+
+  const result=useMemo(()=>computeGearing({
+    maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireDiameter
+  }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireDiameter]);
+
+  return (
+    <div className="wrap">
+      <div className="hdr">
+        <h1>GEAR.OS</h1>
+        <span>Forza Gear Ratio Calculator — Variable Power Band</span>
+      </div>
+      <div className="grid">
+        <div>
+          <div className="card">
+            <div className="ch">Engine</div>
+            <div className="cb">
+              <NumField label="Max RPM (Redline)" value={maxRpm} onChange={setMaxRpm} min={4000} step={100}/>
+              <NumField label="Peak HP RPM" value={hpRpm} onChange={setHpRpm}
+                auto={autoHp} onAutoChange={setAutoHp} autoValue={maxRpm*0.90} min={1000} step={100}
+                unit={autoHp?'Auto: 90% of Max RPM':undefined}/>
+              <NumField label="Peak Torque RPM" value={torqueRpm} onChange={setTorqueRpm}
+                auto={autoTorque} onAutoChange={setAutoTorque} autoValue={maxRpm*0.65} min={500} step={100}
+                unit={autoTorque?'Auto: 65% of Max RPM':undefined}/>
+            </div>
+          </div>
+          <div className="card">
+            <div className="ch">Gearbox &amp; Chassis</div>
+            <div className="cb">
+              <NumField label="Gear Count" value={gearCount} onChange={setGearCount} min={2} step={1}/>
+              <NumField label="Desired Top Speed" value={topSpeed} onChange={setTopSpeed} min={30} step={1} unit="mph"/>
+              <NumField label="Tire Diameter" value={tireDiameter} onChange={setTireDiameter} min={10} step={0.1} unit="inches (full rolling diameter)"/>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          {result.error?
+            <div className="card"><div className="cb err">{result.error}</div></div>
+          :<React.Fragment>
+            <div className="card">
+              <div className="ch">Recommended Final Drive</div>
+              <div className="cb">
+                <div className="ro">
+                  <span className="rl">Final Drive</span>
+                  <span><span className="rv">{round(result.finalDrive,2).toFixed(2)}</span></span>
+                </div>
+              </div>
+              {!result.feasible&&
+                <div className="warn">
+                  Couldn't hit {round(topSpeed,0)} mph at redline within Forza's
+                  {' '}{GEAR_RATIO_MIN.toFixed(2)}–{GEAR_RATIO_MAX.toFixed(2)} gear ratio and
+                  {' '}{FINAL_DRIVE_MIN.toFixed(2)}–{FINAL_DRIVE_MAX.toFixed(2)} Final Drive ranges —
+                  top gear actually reaches {round(result.actualTopSpeed,1)} mph at redline instead.
+                  Try a different top speed, gear count, or tire diameter.
+                </div>}
+            </div>
+
+            <div className="card">
+              <div className="ch">Gear Ratios</div>
+              <div className="cb" style={{padding:0}}>
+                <table className="gtable">
+                  <thead><tr><th>Gear</th><th>Ratio</th><th>Speed @ Redline</th></tr></thead>
+                  <tbody>
+                    {result.gears.map(g=>(
+                      <tr key={g.gear}>
+                        <td>{g.gear===result.gears.length?`${g.gear} (Top)`:g.gear}</td>
+                        <td>{g.ratio.toFixed(2)}</td>
+                        <td>{round(g.speedAtRedline,1)} mph</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="ch">Shift Analysis</div>
+              <div className="cb" style={{padding:0}}>
+                <table className="gtable">
+                  <thead><tr><th>Shift</th><th>Lands At</th><th>Power Band Used</th></tr></thead>
+                  <tbody>
+                    {result.shifts.map(s=>(
+                      <tr key={s.from}>
+                        <td>{s.from} → {s.to}</td>
+                        <td>{Math.round(s.landingRpm)} rpm</td>
+                        <td>
+                          <span className="pbar"><span className="pbar-fill" style={{width:round(s.powerBandPct,0)+'%'}}/></span>
+                          {round(s.powerBandPct,0)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </React.Fragment>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={error:null};}
+  static getDerivedStateFromError(error){return {error};}
+  render(){
+    if(this.state.error){
+      return <div className="err">GEAR.OS crashed: {String(this.state.error.message||this.state.error)}</div>;
+    }
+    return this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <ErrorBoundary><App/></ErrorBoundary>
+);
+</script>
+<script>
+(function(){
+  var preload=document.getElementById('pre-load');
+  function showError(msg,detail){
+    if(preload){
+      preload.style.display='block';
+      preload.innerHTML='<div style="color:#e2e8f0;font-size:14px;margin-bottom:8px">GEAR.OS — Failed to load</div>'
+        +'<div style="color:#6b7280;margin-bottom:12px">'+msg+'</div>'
+        +'<div style="background:#0f172a;padding:12px;border-radius:4px;color:#ef4444;word-break:break-all;line-height:1.6;font-size:11px">'+(detail||'')+'</div>'
+        +'<button onclick="location.reload()" style="margin-top:16px;padding:8px 16px;background:#0f172a;border:1px solid #1e293b;color:#e2e8f0;border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:12px">RELOAD</button>';
+    }
+  }
+  try{
+    if(typeof Babel==='undefined'){showError('Babel failed to load','Check your internet connection and reload.');return;}
+    var src=document.getElementById('app-source').textContent;
+    var compiled;
+    try{
+      compiled=Babel.transform(src,{
+        presets:['env','react'],
+        plugins:['transform-optional-chaining','transform-nullish-coalescing-operator','transform-logical-assignment-operators'],
+        filename:'gear-os.jsx'
+      }).code;
+    }catch(e){
+      showError('Babel compilation failed',e.message||String(e));
+      return;
+    }
+    // Use indirect eval so errors are catchable on all browsers including iOS WebKit.
+    try{
+      (0,eval)(compiled);
+    }catch(e){
+      showError('Runtime error',e.message||String(e));
+    }
+  }catch(e){
+    showError('Load failed',e.message||String(e));
+  }
+})();
+</script>
+</body>
+</html>
