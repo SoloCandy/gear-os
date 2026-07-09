@@ -79,7 +79,7 @@ gears by design.
 | Peak Torque RPM | AUTO defaults to 65% of Max RPM if you don't know the exact figure |
 | Gear Count | 2–10 |
 | Desired Top Speed | mph, at Max RPM in top gear |
-| Tire Diameter | inches, full rolling diameter (not rim size) |
+| Tire Diameter | mm, full rolling diameter (not rim size) |
 
 ## Outputs
 
