@@ -70,6 +70,10 @@ gears by design.
 
 ---
 
+An **IMP / MET** toggle in the top-right of the header switches Desired Top Speed and every
+displayed speed between mph and km/h. Tire Diameter always stays in mm regardless of the
+toggle, matching Forza's own tuning menu.
+
 ## Inputs
 
 | Input | Notes |
@@ -78,8 +82,8 @@ gears by design.
 | Peak HP RPM | AUTO defaults to 90% of Max RPM if you don't know the exact figure |
 | Peak Torque RPM | AUTO defaults to 65% of Max RPM if you don't know the exact figure |
 | Gear Count | 2–10 |
-| Desired Top Speed | mph, at Max RPM in top gear |
-| Tire Diameter | mm, full rolling diameter (not rim size) |
+| Desired Top Speed | mph or km/h (IMP/MET toggle), at Max RPM in top gear |
+| Tire Diameter | mm, full rolling diameter (not rim size) — always mm, unaffected by IMP/MET |
 
 ## Outputs
 
