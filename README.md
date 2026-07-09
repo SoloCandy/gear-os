@@ -59,14 +59,17 @@ game doesn't expose.
 ### Shift Analysis
 
 For each shift, GEAR.OS reports the RPM you land at and how much of the "power band"
-(the RPM range from peak torque to redline) that landing point retains:
+(the RPM range from peak torque to redline) is still ahead of that landing point — i.e.
+how much of it the next gear actually gets to use:
 
 ```
-% Power Band Used = (Landing RPM − Peak Torque RPM) / (Max RPM − Peak Torque RPM)
+% Power Band Used = (Max RPM − Landing RPM) / (Max RPM − Peak Torque RPM)
 ```
 
-Later shifts land closer to redline, so this percentage climbs from low gears to high
-gears by design.
+Early shifts land at the torque peak, so the next gear gets the full band (100%). Later
+shifts land closer to redline, leaving less band ahead — this percentage shrinks from low
+gears to high gears by design, even though those later gears are the ones staying closer
+to peak power.
 
 ---
 

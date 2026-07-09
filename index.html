@@ -183,9 +183,13 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   const actualTopSpeed=gears[N-1].speedAtRedline;
   const topSpeedMissed=Math.abs(actualTopSpeed-topSpeedMph)>Math.max(0.5,topSpeedMph*0.01);
 
+  // % of the power band (Peak Torque RPM -> Max RPM) still ahead of the landing
+  // point — i.e. how much of it the next gear actually gets to use. Landing at
+  // the torque peak (low gears) uses the full band (100%); landing near
+  // redline (high gears) leaves little band left to use (low %).
   const shifts=[];
   for(let g=1;g<N;g++){
-    const pct=clamp((landingRpm[g]-peakTorqueRpm)/(maxRpm-peakTorqueRpm)*100,0,100);
+    const pct=clamp((maxRpm-landingRpm[g])/(maxRpm-peakTorqueRpm)*100,0,100);
     shifts.push({from:g,to:g+1,landingRpm:landingRpm[g],powerBandPct:pct});
   }
 
