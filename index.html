@@ -72,18 +72,17 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .hint{font-size:10px;color:#6b7280;margin-top:4px}
 .ro{padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:2px;
     display:flex;justify-content:space-between;align-items:baseline}
+.ro-col{display:block}
+.ro-col.top{border-color:#e2e8f033}
+.ro-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
 .rl{font-size:10px;color:#9ca3af;letter-spacing:1px;text-transform:uppercase}
 .rv{font-size:22px;font-weight:700;color:#e2e8f0}
+.rv-sm{font-size:18px;font-weight:700;color:#e2e8f0}
 .ru{font-size:10px;color:#6b7280;margin-left:4px}
-.gtable{width:100%;border-collapse:collapse;font-size:12px}
-.gtable th{text-align:right;color:#6b7280;font-size:10px;letter-spacing:1px;
-    text-transform:uppercase;padding:6px 10px;border-bottom:1px solid #1e293b;white-space:nowrap}
-.gtable th:first-child,.gtable td:first-child{text-align:left}
-.gtable td{padding:6px 10px;border-bottom:1px solid #0f172a;color:#cbd5e1;text-align:right;
-    white-space:nowrap}
-.gtable tr:last-child td{border-bottom:none}
-.pbar{display:inline-block;width:60px;height:5px;background:#0f172a;border-radius:2px;
-    overflow:hidden;vertical-align:middle;margin-right:6px}
+.tag{font-size:9px;color:#94a3b8;background:#020617;border:1px solid #1e293b;border-radius:2px;
+    padding:1px 5px;letter-spacing:1px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.pbar{display:block;flex:1;height:5px;background:#020617;border-radius:2px;overflow:hidden}
 .pbar-fill{display:block;height:100%;background:#e2e8f0}
 .warn{color:#f59e0b;font-size:11px;padding:8px 10px;background:#1c1408;
     border:1px solid #78350f;border-radius:2px;margin:10px 12px 0}
@@ -333,40 +332,47 @@ function App(){
 
             <div className="card">
               <div className="ch">Gear Ratios</div>
-              <div className="cb" style={{padding:0}}>
-                <table className="gtable">
-                  <thead><tr><th>Gear</th><th>Ratio</th><th>Speed @ Redline</th></tr></thead>
-                  <tbody>
-                    {result.gears.map(g=>(
-                      <tr key={g.gear}>
-                        <td>{g.gear===result.gears.length?`${g.gear} (Top)`:g.gear}</td>
-                        <td>{g.ratio.toFixed(2)}</td>
-                        <td>{dispSpeed(g.speedAtRedline)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="cb">
+                <div className="stat-grid">
+                  {result.gears.map(g=>{
+                    const isTop=g.gear===result.gears.length;
+                    return (
+                      <div key={g.gear} className={`ro ro-col${isTop?' top':''}`}>
+                        <div className="ro-hdr">
+                          <span className="rl">Gear {g.gear}</span>
+                          {isTop&&<span className="tag">TOP</span>}
+                        </div>
+                        <div style={{display:'flex',alignItems:'baseline',gap:3}}>
+                          <span className={isTop?'rv':'rv-sm'}>{g.ratio.toFixed(2)}</span>
+                        </div>
+                        <div className="ru" style={{marginLeft:0,marginTop:2}}>{dispSpeed(g.speedAtRedline)} @ redline</div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
             <div className="card">
               <div className="ch">Shift Analysis</div>
-              <div className="cb" style={{padding:0}}>
-                <table className="gtable">
-                  <thead><tr><th>Shift</th><th>Lands At</th><th>Power Band Used</th></tr></thead>
-                  <tbody>
-                    {result.shifts.map(s=>(
-                      <tr key={s.from}>
-                        <td>{s.from} → {s.to}</td>
-                        <td>{Math.round(s.landingRpm)} rpm</td>
-                        <td>
-                          <span className="pbar"><span className="pbar-fill" style={{width:round(s.powerBandPct,0)+'%'}}/></span>
-                          {round(s.powerBandPct,0)}%
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="cb">
+                <div className="stat-grid">
+                  {result.shifts.map(s=>(
+                    <div key={s.from} className="ro ro-col">
+                      <div className="ro-hdr">
+                        <span className="rl">{s.from} → {s.to}</span>
+                      </div>
+                      <div style={{display:'flex',alignItems:'baseline',gap:3}}>
+                        <span className="rv-sm">{Math.round(s.landingRpm)}</span>
+                        <span className="ru">rpm</span>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6}}>
+                        <span className="pbar"><span className="pbar-fill" style={{width:round(s.powerBandPct,0)+'%'}}/></span>
+                        <span className="ru" style={{marginLeft:0,whiteSpace:'nowrap'}}>{round(s.powerBandPct,0)}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </React.Fragment>}
