@@ -465,8 +465,10 @@ function DynoInput({maxRpm,setMaxRpm,peakHpRpm,setHpRpm,setAutoHp,peakTorqueRpm,
       <NumField label="Graph Scale" value={scale} onChange={setScale} min={4} max={20} step={1}
         unit="×1000 RPM — sets what the rightmost gridline represents"/>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%" height={H}
-        style={{display:'block',background:'#020617',borderRadius:3,touchAction:'none',marginTop:8}}
-        onPointerMove={onMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
+        style={{display:'block',background:'#020617',borderRadius:3,touchAction:'none',marginTop:8,
+                WebkitUserSelect:'none',userSelect:'none',WebkitTouchCallout:'none'}}
+        onPointerMove={onMove} onPointerUp={endDrag} onPointerCancel={endDrag}
+        onContextMenu={e=>e.preventDefault()}>
         {Array.from({length:11}).map((_,i)=>{
           const x=padL+(i/10)*plotW;
           return <line key={'gx'+i} x1={x} y1={padT} x2={x} y2={H-padB} stroke="#0f172a" strokeWidth={1}/>;
@@ -490,8 +492,10 @@ function DynoInput({maxRpm,setMaxRpm,peakHpRpm,setHpRpm,setAutoHp,peakTorqueRpm,
               <line x1={x} y1={padT} x2={x} y2={H-padB} stroke={l.color} strokeWidth={2.5}/>
               <text x={x} y={l.labelY} textAnchor={anchor} fontSize={13} fontWeight="700" fill={l.color}
                 fontFamily="JetBrains Mono, monospace">{l.label} {Math.round(l.rpm)}</text>
-              <rect x={x-11} y={padT} width={22} height={H-padB-padT} fill="transparent"
-                style={{cursor:'ew-resize'}} onPointerDown={startDrag(l.key)}/>
+              <rect x={x-22} y={padT} width={44} height={H-padB-padT} fill="transparent"
+                style={{cursor:'ew-resize',touchAction:'none',WebkitUserSelect:'none',userSelect:'none',
+                        WebkitTouchCallout:'none'}}
+                onPointerDown={startDrag(l.key)} onContextMenu={e=>e.preventDefault()}/>
             </React.Fragment>
           );
         })}
