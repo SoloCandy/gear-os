@@ -21,6 +21,10 @@ and open it in any browser. No install, no server, no build step.
 > works fully offline. For a fully air-gapped setup, open it once with internet access,
 > then it works without a connection.
 
+> **Auto-save:** every input is saved to `localStorage` as you go — closing the tab or
+> reloading picks up right where you left off. RESET (per sidebar section) clears it back
+> to defaults. See [docs/PERSISTENCE.md](docs/PERSISTENCE.md).
+
 ---
 
 ## The Idea: Variable Power Band

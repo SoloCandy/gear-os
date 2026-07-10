@@ -170,6 +170,17 @@ const KMH_PER_MPH=1.60934;
 function round(n,d){const m=Math.pow(10,d||0);return Math.round(n*m)/m;}
 function clamp(n,lo,hi){return Math.min(hi,Math.max(lo,n));}
 
+// ---- Persistence ----
+// Single flat key covering every input (gear-os has no chassis/tune split
+// like susp-os to justify separate keys). See docs/PERSISTENCE.md.
+const PERSIST_KEY='gearos_inputs_v1';
+function loadPersisted(){
+  try{
+    const s=localStorage.getItem(PERSIST_KEY);
+    return s?JSON.parse(s):{};
+  }catch(e){return {};} // private browsing or parse error — fall back to defaults
+}
+
 // mph = Engine_RPM * 2*pi * TireRadius(mm) * 60 / (1609344 * Ratio * FinalDrive)
 // (wheel RPM = engine RPM / (ratio*FD); wheel circumference = 2*pi*r; convert mm/min -> mph)
 function speedAtRpm(rpm,ratio,finalDrive,tireRadius){
@@ -577,18 +588,34 @@ function Sec({title,open,onToggle,onReset,children}){
 }
 
 function App(){
-  const [metricUnits,setMetricUnits]=useState(false);
-  const [maxRpm,setMaxRpm]=useState(8000);
-  const [autoHp,setAutoHp]=useState(true);
-  const [hpRpm,setHpRpm]=useState(7200);
-  const [autoTorque,setAutoTorque]=useState(true);
-  const [torqueRpm,setTorqueRpm]=useState(5200);
-  const [gearCount,setGearCount]=useState(6);
-  const [topSpeed,setTopSpeed]=useState(180); // canonical: mph
-  const [tireRadius,setTireRadius]=useState(330); // canonical: mm
-  const [target1stSpeed,setTarget1stSpeed]=useState(null); // canonical: mph, null = unset
-  const [tightnessBias,setTightnessBias]=useState(0); // -100..100, 0 = linear
-  const [dynoScale,setDynoScale]=useState(9); // x1000 rpm, dyno graph axis width
+  // Loaded exactly once via useState's lazy-initializer form — every field
+  // below reads its default from this same snapshot so a reload restores
+  // the last session instead of resetting to factory defaults.
+  const [saved]=useState(loadPersisted);
+  const [metricUnits,setMetricUnits]=useState(()=>saved.metricUnits??false);
+  const [maxRpm,setMaxRpm]=useState(()=>saved.maxRpm??8000);
+  const [autoHp,setAutoHp]=useState(()=>saved.autoHp??true);
+  const [hpRpm,setHpRpm]=useState(()=>saved.hpRpm??7200);
+  const [autoTorque,setAutoTorque]=useState(()=>saved.autoTorque??true);
+  const [torqueRpm,setTorqueRpm]=useState(()=>saved.torqueRpm??5200);
+  const [gearCount,setGearCount]=useState(()=>saved.gearCount??6);
+  const [topSpeed,setTopSpeed]=useState(()=>saved.topSpeed??180); // canonical: mph
+  const [tireRadius,setTireRadius]=useState(()=>saved.tireRadius??330); // canonical: mm
+  const [target1stSpeed,setTarget1stSpeed]=useState(()=>saved.target1stSpeed??null); // canonical: mph, null = unset
+  const [tightnessBias,setTightnessBias]=useState(()=>saved.tightnessBias??0); // -100..100, 0 = linear
+  const [dynoScale,setDynoScale]=useState(()=>saved.dynoScale??9); // x1000 rpm, dyno graph axis width
+
+  // Auto-save on every change — mirrors susp-os's usePersist hook, just
+  // flattened to one combined snapshot instead of per-slice keys.
+  useEffect(()=>{
+    try{
+      localStorage.setItem(PERSIST_KEY,JSON.stringify({
+        metricUnits,maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,
+        topSpeed,tireRadius,target1stSpeed,tightnessBias,dynoScale,
+      }));
+    }catch(e){/* private browsing or quota — silently skip */}
+  },[metricUnits,maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,
+     topSpeed,tireRadius,target1stSpeed,tightnessBias,dynoScale]);
 
   const [sidebarOpen,setSidebarOpen]=useState(true);
   const [isMobile,setIsMobile]=useState(false);
