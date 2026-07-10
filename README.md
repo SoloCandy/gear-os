@@ -106,6 +106,9 @@ was solved for).
 ## Outputs
 
 - **Final Drive**
+- **RPM vs Speed chart** — the classic sawtooth: each gear climbs from its landing RPM to
+  redline as speed rises, then drops straight back down at that same speed the instant you
+  shift. Dashed lines mark Redline, Peak HP RPM, and Peak Torque RPM.
 - **Gear Ratios** (1 → N), each with its theoretical top speed at redline
 - **Shift Analysis** — landing RPM and % power band used for every shift
 

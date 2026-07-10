@@ -254,6 +254,69 @@ function NumField({label,value,onChange,autoValue,auto,onAutoChange,min,max,step
   );
 }
 
+// Classic RPM-vs-speed sawtooth: each gear rises from its landing RPM to
+// redline as speed climbs, then drops back to the next gear's landing RPM
+// at that same speed the instant you shift.
+function GearChart({gears,shifts,maxRpm,peakHpRpm,peakTorqueRpm,metricUnits}){
+  const conv=mph=>metricUnits?mph*KMH_PER_MPH:mph;
+  const unit=metricUnits?'km/h':'mph';
+  const pts=[[0,0]];
+  gears.forEach((g,i)=>{
+    pts.push([conv(g.speedAtRedline),maxRpm]);
+    const sh=shifts[i];
+    if(sh)pts.push([conv(g.speedAtRedline),sh.landingRpm]);
+  });
+  const W=700,H=260,padL=48,padR=76,padT=14,padB=26;
+  const plotW=W-padL-padR,plotH=H-padT-padB;
+  const xMax=pts[pts.length-1][0]*1.04;
+  const yMax=maxRpm*1.05;
+  const sx=v=>padL+(v/xMax)*plotW;
+  const sy=v=>padT+plotH-(v/yMax)*plotH;
+  const polyPts=pts.map(p=>`${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(' ');
+  const ticks=[0,0.25,0.5,0.75,1];
+  const refLines=[
+    {rpm:maxRpm,color:'#ef4444',label:'REDLINE'},
+    {rpm:peakHpRpm,color:'#f59e0b',label:'PEAK HP'},
+    {rpm:peakTorqueRpm,color:'#38bdf8',label:'PEAK TQ'},
+  ];
+  return (
+    <React.Fragment>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H}
+           style={{display:'block',background:'#020617',borderRadius:3}}>
+        {ticks.map(t=>{
+          const y=sy(t*yMax);
+          return (
+            <React.Fragment key={'y'+t}>
+              <line x1={padL} y1={y} x2={W-padR} y2={y} stroke="#0f172a" strokeWidth={1}/>
+              <text x={padL-6} y={y+3} textAnchor="end" fontSize={9} fill="#6b7280" fontFamily="JetBrains Mono, monospace">{Math.round(t*yMax)}</text>
+            </React.Fragment>
+          );
+        })}
+        {ticks.map(t=>{
+          const x=sx(t*xMax);
+          return (
+            <React.Fragment key={'x'+t}>
+              <line x1={x} y1={padT} x2={x} y2={H-padB} stroke="#0f172a" strokeWidth={1}/>
+              <text x={x} y={H-padB+14} textAnchor="middle" fontSize={9} fill="#6b7280" fontFamily="JetBrains Mono, monospace">{Math.round(t*xMax)}</text>
+            </React.Fragment>
+          );
+        })}
+        {refLines.map(r=>(
+          <React.Fragment key={r.label}>
+            <line x1={padL} y1={sy(r.rpm)} x2={W-padR} y2={sy(r.rpm)} stroke={r.color} strokeWidth={1} strokeDasharray="4 3" opacity={0.8}/>
+            <text x={W-padR+6} y={sy(r.rpm)+3} fontSize={9} fill={r.color} fontFamily="JetBrains Mono, monospace">{r.label}</text>
+          </React.Fragment>
+        ))}
+        <polyline points={polyPts} fill="none" stroke="#e2e8f0" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"/>
+        {pts.map((p,i)=>(
+          <circle key={i} cx={sx(p[0])} cy={sy(p[1])} r={3} fill="#e2e8f0"/>
+        ))}
+      </svg>
+      <div className="hint" style={{marginTop:6}}>Speed in {unit} · RPM on the vertical axis</div>
+    </React.Fragment>
+  );
+}
+
 function App(){
   const [metricUnits,setMetricUnits]=useState(false);
   const [maxRpm,setMaxRpm]=useState(8000);
@@ -371,6 +434,14 @@ function App(){
                   {' '}{dispSpeed(result.actualAnchorSpeed)} at redline instead.
                   Try a different target speed, gear count, or tire radius.
                 </div>}
+            </div>
+
+            <div className="card">
+              <div className="ch">RPM vs Speed</div>
+              <div className="cb">
+                <GearChart gears={result.gears} shifts={result.shifts} maxRpm={maxRpm}
+                  peakHpRpm={peakHpRpm} peakTorqueRpm={peakTorqueRpm} metricUnits={metricUnits}/>
+              </div>
             </div>
 
             <div className="card">
