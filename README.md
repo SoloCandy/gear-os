@@ -89,6 +89,7 @@ which also works in tire *radius*, not diameter).
 | Desired Top Speed | mph or km/h (IMP/MET toggle), at Max RPM in top gear |
 | Tire Radius | mm, rolling radius (not diameter, not rim size) — always mm, unaffected by IMP/MET |
 | Target 1st Gear Speed | Optional, mph or km/h. Leave blank for default behavior (below) |
+| Spacing Curve Bias | -100 to +100, default 0 (linear). See below |
 
 ### Target 1st Gear Speed
 
@@ -108,6 +109,30 @@ against the real Peak Torque RPM, since that's the engine's actual property.
 Useful when wheelspin off the line or a corner-exit speed matters more than the exact
 shape of the default interpolation. If Forza's ratio/Final Drive ranges can't fit both
 targets, GEAR.OS reports which one (or both) came up short instead of silently picking one.
+
+### Spacing Curve Bias
+
+Controls how the RPM drop between shifts changes as you climb through the gearbox,
+independent of Target 1st Gear Speed. Shift progress (0 at the 1st→2nd shift, 1 at the
+last shift) is warped by a power curve before interpolating between the landing-RPM
+boundaries:
+
+```
+powerFactor = 2 ^ (bias / 50)
+progress    = (shiftIndex / (numShifts - 1)) ^ powerFactor
+```
+
+- **0 (default):** linear — `powerFactor = 1`, same as the base Method above.
+- **Positive (e.g. +50 → powerFactor = 2):** progress stays low through most of the
+  gearbox, so wide RPM drops persist longer and only compress sharply in the last shift(s)
+  — high gears end up tighter, low-to-mid gears stay spread out longer.
+- **Negative (e.g. -50 → powerFactor = 0.5):** progress rises quickly early on, so drops
+  shrink sooner — low gears tighten up fast, and the remaining gears stay close together
+  through the rest of the box.
+
+The first shift always lands at the start RPM (Peak Torque RPM, or the solved landing RPM
+if Target 1st Gear Speed is set) and the last shift always lands at Peak HP RPM — the bias
+only reshapes the curve *between* those two fixed endpoints.
 
 ## Outputs
 

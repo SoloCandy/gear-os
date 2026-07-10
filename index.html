@@ -136,7 +136,7 @@ function speedAtRpm(rpm,ratio,finalDrive,tireRadius){
   return rpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*ratio*finalDrive);
 }
 
-function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireRadius,target1stMph}){
+function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireRadius,target1stMph,tightnessBias}){
   const N=gearCount;
   if(!(N>=2&&N<=10))return {error:'Gear count must be between 2 and 10.'};
   if(!(maxRpm>0))return {error:'Max RPM must be positive.'};
@@ -151,14 +151,27 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   }
 
   const numShifts=N-1;
+  // Spacing Curve Bias (-100..+100) warps the linear shift-progress `t` into
+  // t^powerFactor. powerFactor=1 at bias=0 (linear). Bias>0 (powerFactor>1)
+  // keeps t low through most shifts — wide RPM drops persist longer, only
+  // tightening up sharply in the last shift(s), so high gears end up tighter.
+  // Bias<0 (powerFactor<1) pushes t up early — shifts tighten up sooner, so
+  // low gears end up tighter. t=0 and t=1 (the first and last shift) are
+  // unaffected either way.
+  const powerFactor=Math.pow(2,(tightnessBias||0)/50);
+  const shiftProgress=i=>{
+    const t=numShifts>1?i/(numShifts-1):0;
+    return Math.pow(t,powerFactor);
+  };
+
   // Overall gearing spread (Ratio_1/Ratio_N) produced by landing every shift's
   // RPM along a line from `startDrop` (1st->2nd shift) to Peak HP RPM (last
-  // shift), interpolated linearly across the numShifts-1 shifts in between.
+  // shift), interpolated across the numShifts-1 shifts in between per the
+  // bias curve above.
   const spreadForStartDrop=startDrop=>{
     let spread=1;
     for(let i=0;i<numShifts;i++){
-      const t=numShifts>1?i/(numShifts-1):0;
-      const drop=startDrop+(peakHpRpm-startDrop)*t;
+      const drop=startDrop+(peakHpRpm-startDrop)*shiftProgress(i);
       spread*=maxRpm/drop;
     }
     return spread;
@@ -184,11 +197,11 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   }
 
   // Target landing RPM for each shift g -> g+1 (g = 1..N-1), interpolated
-  // from startDropRpm (first shift) to the HP peak (last shift).
+  // from startDropRpm (first shift) to the HP peak (last shift) per the
+  // bias curve above.
   const landingRpm=new Array(N+1).fill(0);
   for(let g=1;g<N;g++){
-    const t=numShifts>1?(g-1)/(numShifts-1):0;
-    landingRpm[g]=startDropRpm+t*(peakHpRpm-startDropRpm);
+    landingRpm[g]=startDropRpm+shiftProgress(g-1)*(peakHpRpm-startDropRpm);
   }
 
   // Back-solve ratios from top gear (arbitrarily set to 1.00) down to 1st.
@@ -363,6 +376,7 @@ function App(){
   const [topSpeed,setTopSpeed]=useState(180); // canonical: mph
   const [tireRadius,setTireRadius]=useState(330); // canonical: mm
   const [target1stSpeed,setTarget1stSpeed]=useState(null); // canonical: mph, null = unset
+  const [tightnessBias,setTightnessBias]=useState(0); // -100..100, 0 = linear
 
   const dispSpeed=mph=>metricUnits?`${round(mph*KMH_PER_MPH,1)} km/h`:`${round(mph,1)} mph`;
 
@@ -370,8 +384,9 @@ function App(){
   const peakTorqueRpm=autoTorque?round(maxRpm*0.65):torqueRpm;
 
   const result=useMemo(()=>computeGearing({
-    maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireRadius,target1stMph:target1stSpeed
-  }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius,target1stSpeed]);
+    maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireRadius,
+    target1stMph:target1stSpeed,tightnessBias
+  }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius,target1stSpeed,tightnessBias]);
 
   return (
     <React.Fragment>
@@ -440,6 +455,9 @@ function App(){
                   shift lands (instead of always landing at Peak Torque RPM).
                 </div>
               </div>
+              <NumField label="Spacing Curve Bias" value={tightnessBias} onChange={setTightnessBias}
+                min={-100} max={100} step={1}
+                unit="-100 tightens low gears sooner · 0 linear · +100 tightens high gears"/>
             </div>
           </div>
         </div>
