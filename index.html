@@ -558,7 +558,8 @@ function DynoInput({maxRpm,setMaxRpm,peakHpRpm,setHpRpm,setAutoHp,peakTorqueRpm,
       <div className="ch">Dyno Graph</div>
       <div className="cb">
       <NumField label="Graph Scale" value={scale} onChange={setScale} min={4} max={20} step={1}
-        unit="×1000 RPM — sets what the rightmost gridline represents"/>
+        unit="×1000 RPM — sets what the rightmost gridline represents"
+        hint="Only reframes the grid below — doesn't affect any calculation. Raise it if your redline runs off the right edge, lower it to spread the three lines out for easier dragging."/>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%" height={H}
         style={{display:'block',background:'#020617',borderRadius:3,touchAction:'none',marginTop:8,
                 WebkitUserSelect:'none',userSelect:'none',WebkitTouchCallout:'none'}}
@@ -751,16 +752,20 @@ function App(){
                 peakHpRpm={peakHpRpm} setHpRpm={setHpRpm} setAutoHp={setAutoHp}
                 peakTorqueRpm={peakTorqueRpm} setTorqueRpm={setTorqueRpm} setAutoTorque={setAutoTorque}
                 scale={dynoScale} setScale={setDynoScale}/>
-              <NumField label="Max RPM (Redline)" value={maxRpm} onChange={setMaxRpm} min={4000} max={12000} step={100}/>
+              <NumField label="Max RPM (Redline)" value={maxRpm} onChange={setMaxRpm} min={4000} max={12000} step={100}
+                hint="Your engine's rev limiter. Read it off the dyno graph above, or your car's stat screen. Every gear is solved to land exactly here."/>
               <NumField label="Peak HP RPM" value={hpRpm} onChange={setHpRpm}
                 auto={autoHp} onAutoChange={setAutoHp} autoValue={maxRpm*0.90} min={1000} max={maxRpm} step={100}
-                unit={autoHp?'Auto: 90% of Max RPM':undefined}/>
+                unit={autoHp?'Auto: 90% of Max RPM':undefined}
+                hint="Where horsepower peaks on the dyno graph. The last shift always lands here, keeping your highest gears close to peak power."/>
               <NumField label="Peak Torque RPM" value={torqueRpm} onChange={setTorqueRpm}
                 auto={autoTorque} onAutoChange={setAutoTorque} autoValue={maxRpm*0.65} min={500} max={peakHpRpm} step={100}
-                unit={autoTorque?'Auto: 65% of Max RPM':undefined}/>
+                unit={autoTorque?'Auto: 65% of Max RPM':undefined}
+                hint="Where torque peaks on the dyno graph. The 1st→2nd shift lands here by default, so 1st gear uses the widest slice of the power band."/>
           </Sec>
           <Sec title="Gearbox & Chassis" open={openSections.gearbox} onToggle={togSection('gearbox')} onReset={resetGearbox}>
-              <NumField label="Gear Count" value={gearCount} onChange={setGearCount} min={2} max={10} step={1}/>
+              <NumField label="Gear Count" value={gearCount} onChange={setGearCount} min={2} max={10} step={1}
+                hint="How many forward gears your transmission has, 2–10. More gears means tighter ratio steps and more shift points on the Gear Ladder chart."/>
               <NumField label="Desired Top Speed"
                 value={metricUnits?round(topSpeed*KMH_PER_MPH,0):topSpeed}
                 onChange={v=>setTopSpeed(metricUnits?v/KMH_PER_MPH:v)}
@@ -768,10 +773,13 @@ function App(){
                 max={metricUnits?round(300*KMH_PER_MPH,0):300} step={1}
                 unit={metricUnits?'km/h':'mph'}
                 hint="For the most accurate Final Drive, don't guess this number. In-game, pick a gear tall enough that you run out of pull before redline, hold full throttle, and watch the speedometer stop climbing — that plateau is your car's real top speed. Use it here instead of a spec-sheet figure."/>
-              <NumField label="Tire Radius" value={tireRadius} onChange={setTireRadius} min={125} max={500} step={1} unit="mm (rolling radius)"/>
+              <NumField label="Tire Radius" value={tireRadius} onChange={setTireRadius} min={125} max={500} step={1} unit="mm (rolling radius)"
+                hint="Rolling radius, not rim size — half the tire's full loaded diameter. Bigger tires need a numerically higher Final Drive to hit the same top speed."/>
               <div className="field">
                 <label>
-                  <span>Target 1st Gear Speed</span>
+                  <span style={{display:'flex',alignItems:'center',gap:4}}>Target 1st Gear Speed
+                    <Hint text="Useful if wheelspin off the line or a corner-exit speed matters more than outright top speed. Solves the 1st→2nd shift point so 1st gear hits this exact speed at redline, without giving up Desired Top Speed in top gear."/>
+                  </span>
                   {target1stSpeed!=null&&
                     <span className="auto-tog" onClick={()=>setTarget1stSpeed(null)}>CLEAR</span>}
                 </label>
@@ -798,7 +806,8 @@ function App(){
               </div>
               <NumField label="Spacing Curve Bias" value={tightnessBias} onChange={setTightnessBias}
                 min={-100} max={100} step={1}
-                unit="-100 tightens low gears sooner · 0 linear · +100 tightens high gears"/>
+                unit="-100 tightens low gears sooner · 0 linear · +100 tightens high gears"
+                hint="Reshapes how RPM drops change shift-to-shift, between the 1st→2nd and last shift's fixed landing points — it doesn't touch either endpoint. Leave at 0 unless a specific gear needs to feel tighter or wider."/>
           </Sec>
         </div>
 
