@@ -21,15 +21,16 @@
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--font-mono:'JetBrains Mono','Courier New',monospace;}
 html{height:100%;height:-webkit-fill-available;height:100dvh;}
-body{background:#020617;color:#cbd5e1;font-family:var(--font-mono);min-height:100%;
-     -webkit-text-size-adjust:100%;}
+body{background:#020617;color:#cbd5e1;font-family:var(--font-mono);height:100%;
+     -webkit-text-size-adjust:100%;overflow:hidden;}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-track{background:#0a0f1a}
 ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px}
 input[type=number]{-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
-.topbar{border-bottom:1px solid #0f172a;background:#020617}
+.app-shell{display:flex;flex-direction:column;height:100dvh;min-height:-webkit-fill-available;overflow:hidden}
+.topbar{border-bottom:1px solid #0f172a;background:#020617;flex-shrink:0}
 .topbar-inner{max-width:1400px;margin:0 auto;display:flex;align-items:center;
     justify-content:space-between;padding:0 24px;height:48px;flex-wrap:wrap;gap:8px}
 .brand{display:flex;align-items:baseline;gap:10px;padding:8px 0}
@@ -40,9 +41,35 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
     border-radius:2px;cursor:pointer;font-family:var(--font-mono);font-size:11px;
     letter-spacing:1px;transition:all .12s;-webkit-tap-highlight-color:transparent}
 .tbtn.on{border-color:#e2e8f044;background:#0f172a;color:#e2e8f0}
+.hamburger{background:none;border:1px solid #1e293b;border-radius:2px;color:#94a3b8;
+    cursor:pointer;padding:3px 7px;font-size:13px;line-height:1;
+    transition:color .12s,border-color .12s;-webkit-tap-highlight-color:transparent}
+.hamburger.on{color:#e2e8f0;border-color:#e2e8f033}
+.body-shell{display:flex;flex:1;overflow:hidden;position:relative}
+.backdrop{position:absolute;inset:0;background:#00000088;z-index:150}
+.sidebar{flex-shrink:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+    border-right:1px solid #0f172a;background:#020617;transition:width .2s ease}
+.sidebar.mobile{position:absolute;top:0;left:0;bottom:0;z-index:200;
+    transition:transform .2s ease;box-shadow:4px 0 24px #000000cc}
+.sidebar::-webkit-scrollbar{width:12px}
+.sidebar::-webkit-scrollbar-track{background:#0a0f1a;border-left:1px solid #0f172a}
+.sidebar::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px;border:3px solid #0a0f1a}
+.sidebar::-webkit-scrollbar-thumb:hover{background:#334155}
+.sections-row{display:flex;justify-content:flex-end;align-items:center;gap:3px;
+    padding:5px 12px 4px;border-bottom:1px solid #0f172a}
+.sections-row span{font-size:10px;color:#94a3b8;letter-spacing:1px;margin-right:4px}
+.stog{width:100%;display:flex;align-items:center;justify-content:space-between;
+    padding:9px 12px;background:none;border:none;border-bottom:1px solid #0f172a;
+    color:#6b7280;cursor:pointer;font-family:var(--font-mono);font-size:11px;
+    letter-spacing:2px;text-transform:uppercase;transition:color .12s,background .12s;
+    -webkit-tap-highlight-color:transparent}
+.stog:hover{color:#9ca3af;background:#0a0f1a88}
+.stog-open{color:#9ca3af}
+.sec{border-bottom:1px solid #0f172a}
+.sec-body{padding:8px 12px 10px}
+.main-content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .wrap{max-width:1400px;margin:0 auto;padding:24px}
-.grid{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start}
-@media(max-width:768px){.grid{grid-template-columns:1fr}.wrap{padding:16px}.topbar-inner{height:auto;padding:10px 16px}}
+@media(max-width:768px){.wrap{padding:16px}.topbar-inner{height:auto;padding:10px 16px}}
 .card{background:#020617;border:1px solid #1e293b;border-radius:2px;overflow:hidden;margin-bottom:16px}
 .ch{padding:6px 10px;background:#0a0f1a;border-bottom:1px solid #1e293b;
     font-size:10px;color:#9ca3af;letter-spacing:2px;text-transform:uppercase}
@@ -116,7 +143,7 @@ window.addEventListener('DOMContentLoaded',function(){
 });
 </script>
 <script id="app-source" type="text/plain">
-const {useState,useMemo,useRef}=React;
+const {useState,useMemo,useRef,useEffect}=React;
 
 // ---- Forza ratio limits ----
 // Confirmed in-game (Race transmission, sliders dragged to their stops).
@@ -443,6 +470,44 @@ function DynoInput({maxRpm,setMaxRpm,peakHpRpm,setHpRpm,setAutoHp,peakTorqueRpm,
   );
 }
 
+// Collapsible sidebar section — mirrors susp-os's Sec component: a toggle
+// header (▲/▼) with an optional two-step-confirm RESET, body only rendered
+// while open.
+function Sec({title,open,onToggle,onReset,children}){
+  const [pending,setPending]=useState(false);
+  const timer=useRef(null);
+  const handleReset=e=>{
+    e.stopPropagation();
+    if(pending){clearTimeout(timer.current);setPending(false);onReset();}
+    else{setPending(true);timer.current=setTimeout(()=>setPending(false),2000);}
+  };
+  return (
+    <div className="sec">
+      <button className={`stog${open?' stog-open':''}`} onClick={onToggle}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:2,height:10,borderRadius:1,flexShrink:0,
+                       background:open?'#e2e8f0':'#1e293b',transition:'background .12s'}}/>
+          <span>{title}</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          {onReset&&<span
+            onClick={handleReset}
+            title={pending?'Click again to confirm':'Reset to defaults'}
+            style={{fontSize:10,color:pending?'#f59e0b':'#94a3b8',padding:'1px 5px',borderRadius:2,
+                    border:`1px solid ${pending?'#f59e0b44':'#1e293b'}`,lineHeight:1.4,cursor:'pointer',
+                    transition:'color .12s,border-color .12s',userSelect:'none'}}>
+            {pending?'SURE?':'RESET'}
+          </span>}
+          <span style={{fontSize:11,color:open?'#e2e8f0':'#94a3b8',transition:'color .12s'}}>
+            {open?'▲':'▼'}
+          </span>
+        </div>
+      </button>
+      {open&&<div className="sec-body">{children}</div>}
+    </div>
+  );
+}
+
 function App(){
   const [metricUnits,setMetricUnits]=useState(false);
   const [maxRpm,setMaxRpm]=useState(8000);
@@ -457,6 +522,38 @@ function App(){
   const [tightnessBias,setTightnessBias]=useState(0); // -100..100, 0 = linear
   const [dynoScale,setDynoScale]=useState(9); // x1000 rpm, dyno graph axis width
 
+  const [sidebarOpen,setSidebarOpen]=useState(true);
+  const [isMobile,setIsMobile]=useState(false);
+  const [windowWidth,setWindowWidth]=useState(window.innerWidth);
+  const [openSections,setOpenSections]=useState({engine:true,gearbox:true});
+
+  // Same breakpoint-crossing pattern as susp-os: only force sidebarOpen's
+  // default when mobile/desktop actually flips, not on every resize tick.
+  useEffect(()=>{
+    let prevMobile=null;
+    const check=()=>{
+      const w=window.innerWidth;
+      const mobile=w<768;
+      setIsMobile(mobile);
+      setWindowWidth(w);
+      if(prevMobile===null||mobile!==prevMobile)setSidebarOpen(!mobile);
+      prevMobile=mobile;
+    };
+    check();
+    window.addEventListener('resize',check);
+    return()=>window.removeEventListener('resize',check);
+  },[]);
+
+  const sidebarWidth=isMobile?280:Math.min(420,Math.max(320,Math.floor(windowWidth*0.25)));
+  const togSection=key=>()=>setOpenSections(p=>({...p,[key]:!p[key]}));
+
+  const resetEngine=()=>{
+    setMaxRpm(8000);setAutoHp(true);setHpRpm(7200);setAutoTorque(true);setTorqueRpm(5200);setDynoScale(9);
+  };
+  const resetGearbox=()=>{
+    setGearCount(6);setTopSpeed(180);setTireRadius(330);setTarget1stSpeed(null);setTightnessBias(0);
+  };
+
   const dispSpeed=mph=>metricUnits?`${round(mph*KMH_PER_MPH,1)} km/h`:`${round(mph,1)} mph`;
 
   const peakHpRpm=autoHp?round(maxRpm*0.90):hpRpm;
@@ -468,12 +565,17 @@ function App(){
   }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius,target1stSpeed,tightnessBias]);
 
   return (
-    <React.Fragment>
+    <div className="app-shell">
       <div className="topbar">
         <div className="topbar-inner">
-          <div className="brand">
-            <b>GEAR.OS</b>
-            <span>Forza Gear Ratio Calculator — Variable Power Band</span>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <button className={`hamburger${sidebarOpen?' on':''}`} onClick={()=>setSidebarOpen(p=>!p)}>
+              {sidebarOpen?'✕':'☰'}
+            </button>
+            <div className="brand">
+              <b>GEAR.OS</b>
+              <span>Forza Gear Ratio Calculator — Variable Power Band</span>
+            </div>
           </div>
           <div className="unit-toggle">
             <button className={`tbtn${!metricUnits?' on':''}`} onClick={()=>setMetricUnits(false)}>IMP</button>
@@ -481,12 +583,21 @@ function App(){
           </div>
         </div>
       </div>
-      <div className="wrap">
-      <div className="grid">
-        <div>
-          <div className="card">
-            <div className="ch">Engine</div>
-            <div className="cb">
+      <div className="body-shell">
+        {sidebarOpen&&isMobile&&
+          <div className="backdrop" onClick={()=>setSidebarOpen(false)}/>}
+        <div className={`sidebar${isMobile?' mobile':''}`} style={{
+          width:sidebarWidth,
+          ...(isMobile?{transform:sidebarOpen?'translateX(0)':'translateX(-100%)'}:{display:sidebarOpen?'block':'none'})
+        }}>
+          <div className="sections-row">
+            <span>SECTIONS</span>
+            <button className="tbtn" style={{fontSize:10}}
+              onClick={()=>setOpenSections({engine:false,gearbox:false})}>−</button>
+            <button className="tbtn" style={{fontSize:10}}
+              onClick={()=>setOpenSections({engine:true,gearbox:true})}>+</button>
+          </div>
+          <Sec title="Engine" open={openSections.engine} onToggle={togSection('engine')} onReset={resetEngine}>
               <DynoInput maxRpm={maxRpm} setMaxRpm={setMaxRpm}
                 peakHpRpm={peakHpRpm} setHpRpm={setHpRpm} setAutoHp={setAutoHp}
                 peakTorqueRpm={peakTorqueRpm} setTorqueRpm={setTorqueRpm} setAutoTorque={setAutoTorque}
@@ -498,11 +609,8 @@ function App(){
               <NumField label="Peak Torque RPM" value={torqueRpm} onChange={setTorqueRpm}
                 auto={autoTorque} onAutoChange={setAutoTorque} autoValue={maxRpm*0.65} min={500} max={peakHpRpm} step={100}
                 unit={autoTorque?'Auto: 65% of Max RPM':undefined}/>
-            </div>
-          </div>
-          <div className="card">
-            <div className="ch">Gearbox &amp; Chassis</div>
-            <div className="cb">
+          </Sec>
+          <Sec title="Gearbox & Chassis" open={openSections.gearbox} onToggle={togSection('gearbox')} onReset={resetGearbox}>
               <NumField label="Gear Count" value={gearCount} onChange={setGearCount} min={2} max={10} step={1}/>
               <NumField label="Desired Top Speed"
                 value={metricUnits?round(topSpeed*KMH_PER_MPH,0):topSpeed}
@@ -541,11 +649,11 @@ function App(){
               <NumField label="Spacing Curve Bias" value={tightnessBias} onChange={setTightnessBias}
                 min={-100} max={100} step={1}
                 unit="-100 tightens low gears sooner · 0 linear · +100 tightens high gears"/>
-            </div>
-          </div>
+          </Sec>
         </div>
 
-        <div>
+        <div className="main-content">
+        <div className="wrap">
           {result.error?
             <div className="card"><div className="cb err">{result.error}</div></div>
           :<React.Fragment>
@@ -631,7 +739,7 @@ function App(){
         </div>
       </div>
       </div>
-    </React.Fragment>
+    </div>
   );
 }
 

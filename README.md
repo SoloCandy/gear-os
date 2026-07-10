@@ -78,6 +78,14 @@ displayed speed between mph and km/h. Tire Radius always stays in mm regardless 
 toggle, matching Forza's own tuning menu (and [SUSP.OS](https://github.com/solocandy/susp-os),
 which also works in tire *radius*, not diameter).
 
+## Sidebar
+
+Inputs live in a collapsible sidebar (☰ in the header toggles it), mirroring SUSP.OS: the
+**Engine** and **Gearbox & Chassis** groups each collapse independently (▲/▼), have their
+own two-step **RESET** (click once to arm, again within a couple seconds to confirm), and
+a **SECTIONS −/+** row collapses or expands both at once. On narrow screens the sidebar
+becomes a slide-in overlay with a tap-to-close backdrop instead of a fixed column.
+
 ## Dyno Graph Input
 
 Forza's own dyno screen — the only place it shows you Redline, Peak HP, and Peak Torque —
