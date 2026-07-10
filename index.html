@@ -362,19 +362,25 @@ function GearChart({gears,shifts,maxRpm,peakHpRpm,peakTorqueRpm,metricUnits}){
 
   const conv=mph=>metricUnits?mph*KMH_PER_MPH:mph;
   const unit=metricUnits?'km/h':'mph';
-  const pts=[[0,0]];
+  // One segment per gear — just the rise from its landing point to redline.
+  // No line drawn for the shift itself (the vertical drop back down), since
+  // that's an instant, not something the car actually traces through.
+  const segments=[];
+  let landingRpm=0,landingSpeed=0;
   gears.forEach((g,i)=>{
-    pts.push([conv(g.speedAtRedline),maxRpm]);
+    const speed=conv(g.speedAtRedline);
+    segments.push([[landingSpeed,landingRpm],[speed,maxRpm]]);
     const sh=shifts[i];
-    if(sh)pts.push([conv(g.speedAtRedline),sh.landingRpm]);
+    landingSpeed=speed;
+    landingRpm=sh?sh.landingRpm:maxRpm;
   });
+  const pts=segments.flat();
   const W=measuredWidth,H=280,padL=52,padR=80,padT=14,padB=28;
   const plotW=W-padL-padR,plotH=H-padT-padB;
   const xMax=pts[pts.length-1][0]*1.04;
   const yMax=maxRpm*1.05;
   const sx=v=>padL+(v/xMax)*plotW;
   const sy=v=>padT+plotH-(v/yMax)*plotH;
-  const polyPts=pts.map(p=>`${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(' ');
   const ticks=[0,0.25,0.5,0.75,1];
   const gridCols=20,gridRows=8;
   const refLines=[
@@ -408,7 +414,10 @@ function GearChart({gears,shifts,maxRpm,peakHpRpm,peakTorqueRpm,metricUnits}){
             <text x={W-padR+6} y={sy(r.rpm)+3} fontSize={10} fill={r.color} fontFamily="JetBrains Mono, monospace">{r.label}</text>
           </React.Fragment>
         ))}
-        <polyline points={polyPts} fill="none" stroke="#e2e8f0" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"/>
+        {segments.map((seg,i)=>(
+          <line key={i} x1={sx(seg[0][0])} y1={sy(seg[0][1])} x2={sx(seg[1][0])} y2={sy(seg[1][1])}
+            stroke="#e2e8f0" strokeWidth={2} strokeLinecap="round"/>
+        ))}
         {pts.map((p,i)=>(
           <circle key={i} cx={sx(p[0])} cy={sy(p[1])} r={3} fill="#e2e8f0"/>
         ))}
