@@ -161,7 +161,7 @@ only reshapes the curve *between* those two fixed endpoints.
 
 ## Outputs
 
-- **RPM vs Speed chart**, at the top — the classic sawtooth: each gear climbs from its
+- **Gear Ladder**, at the top — the classic RPM-vs-speed sawtooth: each gear climbs from its
   landing RPM to redline as speed rises, then drops straight back down at that same speed
   the instant you shift. Dashed lines mark Redline, Peak HP RPM, and Peak Torque RPM.
 - **Gearing** — one full-width row per gear (plus a Final Drive row on top), left to right:
