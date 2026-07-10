@@ -88,6 +88,20 @@ which also works in tire *radius*, not diameter).
 | Gear Count | 2–10 |
 | Desired Top Speed | mph or km/h (IMP/MET toggle), at Max RPM in top gear |
 | Tire Radius | mm, rolling radius (not diameter, not rim size) — always mm, unaffected by IMP/MET |
+| Target 1st Gear Speed | Optional, mph or km/h. Leave blank for default behavior (below) |
+
+### Target 1st Gear Speed
+
+1st gear's speed and top gear's speed can't both be chosen independently — their ratio is
+already fixed by the Variable Power Band's RPM interpolation once Max RPM, Peak HP/Torque
+RPM, and Gear Count are set. Left blank, GEAR.OS solves Final Drive so **top gear** hits
+Desired Top Speed at redline, same as always.
+
+Set a value here — e.g. because wheelspin off the line or a corner-exit speed matters more
+than outright top speed — and it takes over as the target instead: Final Drive is solved so
+**1st gear** hits this speed at redline, and top gear's resulting speed becomes whatever
+falls out (shown in the Gear Ratios table, with a note above Final Drive stating which gear
+was solved for).
 
 ## Outputs
 

@@ -136,12 +136,13 @@ function speedAtRpm(rpm,ratio,finalDrive,tireRadius){
   return rpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*ratio*finalDrive);
 }
 
-function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireRadius}){
+function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireRadius,target1stMph}){
   const N=gearCount;
   if(!(N>=2&&N<=10))return {error:'Gear count must be between 2 and 10.'};
   if(!(maxRpm>0))return {error:'Max RPM must be positive.'};
   if(!(topSpeedMph>0))return {error:'Desired top speed must be positive.'};
   if(!(tireRadius>0))return {error:'Tire radius must be positive.'};
+  if(target1stMph!=null&&!(target1stMph>0))return {error:'Target 1st gear speed must be positive.'};
   if(!(peakTorqueRpm>0&&peakHpRpm>peakTorqueRpm&&maxRpm>=peakHpRpm)){
     return {error:'RPMs must satisfy 0 < Peak Torque RPM < Peak HP RPM ≤ Max RPM.'};
   }
@@ -163,8 +164,15 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
     rawRatio[g]=rawRatio[g+1]*(maxRpm/landingRpm[g]);
   }
 
-  // Solve Final Drive so top gear hits the desired top speed at Max RPM.
-  const fdRaw=maxRpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*rawRatio[N]*topSpeedMph);
+  // Solve Final Drive so the anchor gear hits its target speed at Max RPM.
+  // Normally that's top gear hitting Desired Top Speed; if a Target 1st Gear
+  // Speed is set, it takes over as the anchor instead (1st gear's speed and
+  // top gear's speed can't both be chosen independently — their ratio is
+  // already fixed by the RPM interpolation above — so one has to give).
+  const anchorIsFirstGear=target1stMph!=null;
+  const anchorSpeedMph=anchorIsFirstGear?target1stMph:topSpeedMph;
+  const anchorRawRatio=anchorIsFirstGear?rawRatio[1]:rawRatio[N];
+  const fdRaw=maxRpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*anchorRawRatio*anchorSpeedMph);
 
   // Normalize: find a uniform scale s (ratio[g]*=s, FD/=s) that fits both the
   // per-gear range and the Final Drive range. This is safe because the product
@@ -187,10 +195,11 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   }
 
   // Whichever of Final Drive or a gear ratio hit its range limit, the real
-  // signal for the user is whether top gear still reaches the requested top
+  // signal for the user is whether the anchor gear still reaches its target
   // speed at redline — check that directly rather than trusting `feasible`.
   const actualTopSpeed=gears[N-1].speedAtRedline;
-  const topSpeedMissed=Math.abs(actualTopSpeed-topSpeedMph)>Math.max(0.5,topSpeedMph*0.01);
+  const actualAnchorSpeed=anchorIsFirstGear?gears[0].speedAtRedline:actualTopSpeed;
+  const anchorMissed=Math.abs(actualAnchorSpeed-anchorSpeedMph)>Math.max(0.5,anchorSpeedMph*0.01);
 
   // % of the power band (Peak Torque RPM -> Max RPM) still ahead of the landing
   // point — i.e. how much of it the next gear actually gets to use. Landing at
@@ -202,7 +211,8 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
     shifts.push({from:g,to:g+1,landingRpm:landingRpm[g],powerBandPct:pct});
   }
 
-  return {finalDrive,gears,shifts,feasible:!topSpeedMissed,actualTopSpeed,peakHpRpm,peakTorqueRpm};
+  return {finalDrive,gears,shifts,feasible:!anchorMissed,actualTopSpeed,actualAnchorSpeed,
+    anchorIsFirstGear,anchorSpeedMph,peakHpRpm,peakTorqueRpm};
 }
 
 function NumField({label,value,onChange,autoValue,auto,onAutoChange,min,max,step,unit}){
@@ -254,6 +264,7 @@ function App(){
   const [gearCount,setGearCount]=useState(6);
   const [topSpeed,setTopSpeed]=useState(180); // canonical: mph
   const [tireRadius,setTireRadius]=useState(330); // canonical: mm
+  const [target1stSpeed,setTarget1stSpeed]=useState(null); // canonical: mph, null = unset
 
   const dispSpeed=mph=>metricUnits?`${round(mph*KMH_PER_MPH,1)} km/h`:`${round(mph,1)} mph`;
 
@@ -261,8 +272,8 @@ function App(){
   const peakTorqueRpm=autoTorque?round(maxRpm*0.65):torqueRpm;
 
   const result=useMemo(()=>computeGearing({
-    maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireRadius
-  }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius]);
+    maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireRadius,target1stMph:target1stSpeed
+  }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius,target1stSpeed]);
 
   return (
     <React.Fragment>
@@ -304,6 +315,32 @@ function App(){
                 max={metricUnits?round(300*KMH_PER_MPH,0):300} step={1}
                 unit={metricUnits?'km/h':'mph'}/>
               <NumField label="Tire Radius" value={tireRadius} onChange={setTireRadius} min={125} max={500} step={1} unit="mm (rolling radius)"/>
+              <div className="field">
+                <label>
+                  <span>Target 1st Gear Speed</span>
+                  {target1stSpeed!=null&&
+                    <span className="auto-tog" onClick={()=>setTarget1stSpeed(null)}>CLEAR</span>}
+                </label>
+                <input
+                  className="finput"
+                  type="number"
+                  placeholder="Optional"
+                  min={metricUnits?round(10*KMH_PER_MPH,0):10}
+                  max={metricUnits?round(120*KMH_PER_MPH,0):120}
+                  step={1}
+                  value={target1stSpeed==null?'':(metricUnits?round(target1stSpeed*KMH_PER_MPH,0):target1stSpeed)}
+                  onChange={e=>{
+                    const raw=e.target.value;
+                    if(raw===''){setTarget1stSpeed(null);return;}
+                    const v=Number(raw);
+                    setTarget1stSpeed(metricUnits?v/KMH_PER_MPH:v);
+                  }}
+                />
+                <div className="hint">
+                  {metricUnits?'km/h':'mph'} — leave blank to gear for Desired Top Speed instead.
+                  When set, this replaces Desired Top Speed as the Final Drive target.
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -319,14 +356,20 @@ function App(){
                   <span className="rl">Final Drive</span>
                   <span><span className="rv">{round(result.finalDrive,2).toFixed(2)}</span></span>
                 </div>
+                <div className="hint" style={{marginTop:8}}>
+                  Solved to hit {dispSpeed(result.anchorSpeedMph)} at redline in
+                  {' '}{result.anchorIsFirstGear?'1st gear':'top gear'}.
+                </div>
               </div>
               {!result.feasible&&
                 <div className="warn">
-                  Couldn't hit {dispSpeed(topSpeed)} at redline within Forza's
+                  Couldn't hit {dispSpeed(result.anchorSpeedMph)} at redline in
+                  {' '}{result.anchorIsFirstGear?'1st':'top'} gear within Forza's
                   {' '}{GEAR_RATIO_MIN.toFixed(2)}–{GEAR_RATIO_MAX.toFixed(2)} gear ratio and
                   {' '}{FINAL_DRIVE_MIN.toFixed(2)}–{FINAL_DRIVE_MAX.toFixed(2)} Final Drive ranges —
-                  top gear actually reaches {dispSpeed(result.actualTopSpeed)} at redline instead.
-                  Try a different top speed, gear count, or tire radius.
+                  {' '}{result.anchorIsFirstGear?'1st':'top'} gear actually reaches
+                  {' '}{dispSpeed(result.actualAnchorSpeed)} at redline instead.
+                  Try a different target speed, gear count, or tire radius.
                 </div>}
             </div>
 
