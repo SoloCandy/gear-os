@@ -142,17 +142,53 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   if(!(maxRpm>0))return {error:'Max RPM must be positive.'};
   if(!(topSpeedMph>0))return {error:'Desired top speed must be positive.'};
   if(!(tireRadius>0))return {error:'Tire radius must be positive.'};
-  if(target1stMph!=null&&!(target1stMph>0))return {error:'Target 1st gear speed must be positive.'};
+  if(target1stMph!=null){
+    if(!(target1stMph>0))return {error:'Target 1st gear speed must be positive.'};
+    if(!(target1stMph<topSpeedMph))return {error:'Target 1st Gear Speed must be less than Desired Top Speed.'};
+  }
   if(!(peakTorqueRpm>0&&peakHpRpm>peakTorqueRpm&&maxRpm>=peakHpRpm)){
     return {error:'RPMs must satisfy 0 < Peak Torque RPM < Peak HP RPM ≤ Max RPM.'};
   }
 
-  // Target landing RPM for each shift g -> g+1 (g = 1..N-1), interpolated linearly
-  // from the torque peak (first shift) to the HP peak (last shift).
+  const numShifts=N-1;
+  // Overall gearing spread (Ratio_1/Ratio_N) produced by landing every shift's
+  // RPM along a line from `startDrop` (1st->2nd shift) to Peak HP RPM (last
+  // shift), interpolated linearly across the numShifts-1 shifts in between.
+  const spreadForStartDrop=startDrop=>{
+    let spread=1;
+    for(let i=0;i<numShifts;i++){
+      const t=numShifts>1?i/(numShifts-1):0;
+      const drop=startDrop+(peakHpRpm-startDrop)*t;
+      spread*=maxRpm/drop;
+    }
+    return spread;
+  };
+
+  // Normally the 1st->2nd shift lands at Peak Torque RPM (the Variable Power
+  // Band default). If Target 1st Gear Speed is set, top gear's speed and 1st
+  // gear's speed both need to be hit exactly — but their ratio is fixed by
+  // the interpolation above, so instead of picking one over the other, solve
+  // for whatever landing RPM (in place of Peak Torque RPM) makes the
+  // resulting spread match exactly what both targets require simultaneously.
+  // spreadForStartDrop is strictly decreasing in startDrop, so bisect for it.
+  let startDropRpm=peakTorqueRpm;
+  if(target1stMph!=null){
+    const requiredSpread=topSpeedMph/target1stMph;
+    let low=0,high=maxRpm,iterations=0;
+    while(high-low>1&&iterations<50){
+      const mid=(low+high)/2;
+      if(spreadForStartDrop(mid)>requiredSpread)low=mid;else high=mid;
+      iterations++;
+    }
+    startDropRpm=(low+high)/2;
+  }
+
+  // Target landing RPM for each shift g -> g+1 (g = 1..N-1), interpolated
+  // from startDropRpm (first shift) to the HP peak (last shift).
   const landingRpm=new Array(N+1).fill(0);
   for(let g=1;g<N;g++){
-    const t=(N===2)?1:(g-1)/(N-2);
-    landingRpm[g]=peakTorqueRpm+t*(peakHpRpm-peakTorqueRpm);
+    const t=numShifts>1?(g-1)/(numShifts-1):0;
+    landingRpm[g]=startDropRpm+t*(peakHpRpm-startDropRpm);
   }
 
   // Back-solve ratios from top gear (arbitrarily set to 1.00) down to 1st.
@@ -164,19 +200,15 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
     rawRatio[g]=rawRatio[g+1]*(maxRpm/landingRpm[g]);
   }
 
-  // Solve Final Drive so the anchor gear hits its target speed at Max RPM.
-  // Normally that's top gear hitting Desired Top Speed; if a Target 1st Gear
-  // Speed is set, it takes over as the anchor instead (1st gear's speed and
-  // top gear's speed can't both be chosen independently — their ratio is
-  // already fixed by the RPM interpolation above — so one has to give).
-  const anchorIsFirstGear=target1stMph!=null;
-  const anchorSpeedMph=anchorIsFirstGear?target1stMph:topSpeedMph;
-  const anchorRawRatio=anchorIsFirstGear?rawRatio[1]:rawRatio[N];
-  const fdRaw=maxRpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*anchorRawRatio*anchorSpeedMph);
+  // Solve Final Drive so top gear hits Desired Top Speed at Max RPM. When
+  // Target 1st Gear Speed was set, the startDropRpm solve above already
+  // makes 1st gear land on its target too, at this same Final Drive.
+  const fdRaw=maxRpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*rawRatio[N]*topSpeedMph);
 
   // Normalize: find a uniform scale s (ratio[g]*=s, FD/=s) that fits both the
   // per-gear range and the Final Drive range. This is safe because the product
-  // ratio*FD (and thus every RPM/speed relationship) is invariant under it.
+  // ratio*FD (and thus every RPM/speed relationship, including 1st gear's) is
+  // invariant under it.
   const sMax=Math.min(GEAR_RATIO_MAX/rawRatio[1],fdRaw/FINAL_DRIVE_MIN);
   const sMin=Math.max(GEAR_RATIO_MIN/rawRatio[N],fdRaw/FINAL_DRIVE_MAX);
   let feasible=true, s=1;
@@ -194,25 +226,28 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
     gears.push({gear:g,ratio,speedAtRedline:speedAtRpm(maxRpm,ratio,finalDrive,tireRadius)});
   }
 
-  // Whichever of Final Drive or a gear ratio hit its range limit, the real
-  // signal for the user is whether the anchor gear still reaches its target
-  // speed at redline — check that directly rather than trusting `feasible`.
+  // If a gear ratio or Final Drive had to clamp to Forza's range, one or both
+  // targets may come up short — check each directly rather than trusting `feasible`.
   const actualTopSpeed=gears[N-1].speedAtRedline;
-  const actualAnchorSpeed=anchorIsFirstGear?gears[0].speedAtRedline:actualTopSpeed;
-  const anchorMissed=Math.abs(actualAnchorSpeed-anchorSpeedMph)>Math.max(0.5,anchorSpeedMph*0.01);
+  const topSpeedMissed=Math.abs(actualTopSpeed-topSpeedMph)>Math.max(0.5,topSpeedMph*0.01);
+  const actualFirstGearSpeed=gears[0].speedAtRedline;
+  const firstGearMissed=target1stMph!=null&&Math.abs(actualFirstGearSpeed-target1stMph)>Math.max(0.5,target1stMph*0.01);
 
   // % of the power band (Peak Torque RPM -> Max RPM) still ahead of the landing
   // point — i.e. how much of it the next gear actually gets to use. Landing at
   // the torque peak (low gears) uses the full band (100%); landing near
-  // redline (high gears) leaves little band left to use (low %).
+  // redline (high gears) leaves little band left to use (low %). Always
+  // measured against the engine's actual Peak Torque RPM, even if a solved
+  // startDropRpm (for Target 1st Gear Speed) lands somewhere else.
   const shifts=[];
   for(let g=1;g<N;g++){
     const pct=clamp((maxRpm-landingRpm[g])/(maxRpm-peakTorqueRpm)*100,0,100);
     shifts.push({from:g,to:g+1,landingRpm:landingRpm[g],powerBandPct:pct});
   }
 
-  return {finalDrive,gears,shifts,feasible:!anchorMissed,actualTopSpeed,actualAnchorSpeed,
-    anchorIsFirstGear,anchorSpeedMph,peakHpRpm,peakTorqueRpm};
+  return {finalDrive,gears,shifts,feasible:!topSpeedMissed&&!firstGearMissed,
+    actualTopSpeed,actualFirstGearSpeed,topSpeedMissed,firstGearMissed,
+    startDropRpm,peakHpRpm,peakTorqueRpm};
 }
 
 function NumField({label,value,onChange,autoValue,auto,onAutoChange,min,max,step,unit}){
@@ -400,8 +435,9 @@ function App(){
                   }}
                 />
                 <div className="hint">
-                  {metricUnits?'km/h':'mph'} — leave blank to gear for Desired Top Speed instead.
-                  When set, this replaces Desired Top Speed as the Final Drive target.
+                  {metricUnits?'km/h':'mph'} — leave blank to ignore. When set, GEAR.OS solves
+                  for both this and Desired Top Speed at once by adjusting where the 1st→2nd
+                  shift lands (instead of always landing at Peak Torque RPM).
                 </div>
               </div>
             </div>
@@ -420,18 +456,19 @@ function App(){
                   <span><span className="rv">{round(result.finalDrive,2).toFixed(2)}</span></span>
                 </div>
                 <div className="hint" style={{marginTop:8}}>
-                  Solved to hit {dispSpeed(result.anchorSpeedMph)} at redline in
-                  {' '}{result.anchorIsFirstGear?'1st gear':'top gear'}.
+                  Solved to hit {dispSpeed(topSpeed)} at redline in top gear
+                  {target1stSpeed!=null&&<React.Fragment> and {dispSpeed(target1stSpeed)} in 1st gear</React.Fragment>}.
                 </div>
               </div>
               {!result.feasible&&
                 <div className="warn">
-                  Couldn't hit {dispSpeed(result.anchorSpeedMph)} at redline in
-                  {' '}{result.anchorIsFirstGear?'1st':'top'} gear within Forza's
-                  {' '}{GEAR_RATIO_MIN.toFixed(2)}–{GEAR_RATIO_MAX.toFixed(2)} gear ratio and
-                  {' '}{FINAL_DRIVE_MIN.toFixed(2)}–{FINAL_DRIVE_MAX.toFixed(2)} Final Drive ranges —
-                  {' '}{result.anchorIsFirstGear?'1st':'top'} gear actually reaches
-                  {' '}{dispSpeed(result.actualAnchorSpeed)} at redline instead.
+                  Couldn't fit every ratio inside Forza's {GEAR_RATIO_MIN.toFixed(2)}–{GEAR_RATIO_MAX.toFixed(2)}
+                  {' '}gear ratio and {FINAL_DRIVE_MIN.toFixed(2)}–{FINAL_DRIVE_MAX.toFixed(2)} Final Drive ranges
+                  {' '}while hitting every target:
+                  {result.topSpeedMissed&&
+                    <div>Top gear reaches {dispSpeed(result.actualTopSpeed)} instead of {dispSpeed(topSpeed)}.</div>}
+                  {result.firstGearMissed&&
+                    <div>1st gear reaches {dispSpeed(result.actualFirstGearSpeed)} instead of {dispSpeed(target1stSpeed)}.</div>}
                   Try a different target speed, gear count, or tire radius.
                 </div>}
             </div>

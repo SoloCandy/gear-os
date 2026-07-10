@@ -92,16 +92,22 @@ which also works in tire *radius*, not diameter).
 
 ### Target 1st Gear Speed
 
-1st gear's speed and top gear's speed can't both be chosen independently — their ratio is
-already fixed by the Variable Power Band's RPM interpolation once Max RPM, Peak HP/Torque
-RPM, and Gear Count are set. Left blank, GEAR.OS solves Final Drive so **top gear** hits
-Desired Top Speed at redline, same as always.
+Left blank, GEAR.OS behaves exactly as described above: the 1st→2nd shift lands at Peak
+Torque RPM, Final Drive solves from Desired Top Speed.
 
-Set a value here — e.g. because wheelspin off the line or a corner-exit speed matters more
-than outright top speed — and it takes over as the target instead: Final Drive is solved so
-**1st gear** hits this speed at redline, and top gear's resulting speed becomes whatever
-falls out (shown in the Gear Ratios table, with a note above Final Drive stating which gear
-was solved for).
+1st gear's speed and top gear's speed can't both be *freely* chosen — once Max RPM, Peak
+HP/Torque RPM, and Gear Count are set, their ratio (`Ratio_1st / Ratio_Top`) is fixed by
+the RPM interpolation. But that interpolation has a free parameter: where the 1st→2nd
+shift lands, normally pinned to Peak Torque RPM. Set a Target 1st Gear Speed and GEAR.OS
+instead **solves for that landing RPM** (via bisection) so the resulting ratio spread
+satisfies `Desired Top Speed / Target 1st Gear Speed` exactly — hitting *both* targets at
+once, with Final Drive still solved from Desired Top Speed as always. The solved landing
+RPM can differ from Peak Torque RPM; the Shift Analysis "% Power Band Used" still measures
+against the real Peak Torque RPM, since that's the engine's actual property.
+
+Useful when wheelspin off the line or a corner-exit speed matters more than the exact
+shape of the default interpolation. If Forza's ratio/Final Drive ranges can't fit both
+targets, GEAR.OS reports which one (or both) came up short instead of silently picking one.
 
 ## Outputs
 
