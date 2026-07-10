@@ -78,6 +78,23 @@ displayed speed between mph and km/h. Tire Radius always stays in mm regardless 
 toggle, matching Forza's own tuning menu (and [SUSP.OS](https://github.com/solocandy/susp-os),
 which also works in tire *radius*, not diameter).
 
+## Dyno Graph Input
+
+Forza's own dyno screen — the only place it shows you Redline, Peak HP, and Peak Torque —
+is just a power/torque curve on a grid with no numeric readout for any of those three RPMs.
+Instead of eyeballing a number off that curve, GEAR.OS gives you the same grid: drag the
+Peak TQ, Peak HP, and Redline lines to where you see those peaks on your own dyno screen,
+and it reads the RPM off the line's position.
+
+- **Graph Scale** sets what the rightmost gridline represents (×1000 RPM) — the grid itself
+  never changes shape, only what RPM each column stands for.
+- The three lines can be dragged in any order; there's no snapping or blocking between them.
+  If the result is physically invalid (e.g. Peak Torque above Peak HP), the usual validation
+  error explains why.
+- Dragging Peak HP or Peak Torque turns off that field's AUTO checkbox, same as typing a
+  value directly would. This is a second way to set the same three Engine values — nothing
+  here changes if you never touch it, and the numeric fields below stay fully usable.
+
 ## Inputs
 
 | Input | Notes |
