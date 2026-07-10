@@ -314,13 +314,67 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
     startDropRpm,peakHpRpm,peakTorqueRpm};
 }
 
-function NumField({label,value,onChange,autoValue,auto,onAutoChange,min,max,step,unit}){
+// Hover (mouse) or tap (touch) info icon with a viewport-clamped tooltip.
+// Ported from susp-os's Hint component.
+function Hint({text}){
+  const [pos,setPos]=useState(null);
+  const ref=useRef(null);
+  const isTouch=useRef(false);
+
+  const calcPos=()=>{
+    if(!ref.current)return null;
+    const r=ref.current.getBoundingClientRect();
+    const PAD=8,GAP=6;
+    const TW=Math.min(260,window.innerWidth-PAD*2);
+    const TH=240;
+    const showBelow=r.bottom+GAP+TH<=window.innerHeight;
+    const top=Math.max(PAD,showBelow?r.bottom+GAP:r.top-TH-GAP);
+    const iconCx=(r.left+r.right)/2;
+    const left=Math.max(PAD,Math.min(iconCx-TW/2,window.innerWidth-TW-PAD));
+    return{top,left,width:TW};
+  };
+
+  const onMouseEnter=()=>{ if(!isTouch.current) setPos(calcPos()); };
+  const onMouseLeave=()=>{ if(!isTouch.current) setPos(null); };
+  const onClick=e=>{
+    isTouch.current=true;
+    e.stopPropagation();
+    setPos(p=>p?null:calcPos());
+  };
+
+  useEffect(()=>{
+    if(!pos)return;
+    const dismiss=()=>setPos(null);
+    const t=setTimeout(()=>document.addEventListener('click',dismiss,{once:true}),10);
+    return()=>{clearTimeout(t);document.removeEventListener('click',dismiss);};
+  },[pos]);
+
+  return(
+    <span ref={ref} style={{display:'inline-block',cursor:'help',WebkitTapHighlightColor:'transparent'}}
+          onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}
+          onTouchStart={()=>{isTouch.current=true;}}
+          onClick={onClick}>
+      <span style={{fontSize:10,color:'#94a3b8'}}>ⓘ</span>
+      {pos&&ReactDOM.createPortal(
+        <div style={{position:'fixed',top:pos.top,left:pos.left,zIndex:1000,width:pos.width??220,
+                     background:'#0f172a',border:'1px solid #e2e8f011',borderRadius:2,
+                     padding:'7px 9px',fontSize:11,color:'#94a3b8',lineHeight:1.6,
+                     pointerEvents:'none',boxShadow:'0 4px 16px #00000088'}}>
+          {text}
+        </div>,
+        document.body
+      )}
+    </span>
+  );
+}
+
+function NumField({label,value,onChange,autoValue,auto,onAutoChange,min,max,step,unit,hint}){
   const dispVal=auto?round(autoValue,0):value;
   const pct=max>min?clamp((dispVal-min)/(max-min)*100,0,100):0;
   return (
     <div className="field">
       <label>
-        <span>{label}</span>
+        <span style={{display:'flex',alignItems:'center',gap:4}}>{label}{hint&&<Hint text={hint}/>}</span>
         {onAutoChange&&
           <span className="auto-tog" onClick={()=>onAutoChange(!auto)}>
             <input type="checkbox" checked={auto} onChange={()=>onAutoChange(!auto)}/>AUTO
@@ -712,7 +766,8 @@ function App(){
                 onChange={v=>setTopSpeed(metricUnits?v/KMH_PER_MPH:v)}
                 min={metricUnits?round(30*KMH_PER_MPH,0):30}
                 max={metricUnits?round(300*KMH_PER_MPH,0):300} step={1}
-                unit={metricUnits?'km/h':'mph'}/>
+                unit={metricUnits?'km/h':'mph'}
+                hint="For the most accurate Final Drive, don't guess this number. In-game, pick a gear tall enough that you run out of pull before redline, hold full throttle, and watch the speedometer stop climbing — that plateau is your car's real top speed. Use it here instead of a spec-sheet figure."/>
               <NumField label="Tire Radius" value={tireRadius} onChange={setTireRadius} min={125} max={500} step={1} unit="mm (rolling radius)"/>
               <div className="field">
                 <label>

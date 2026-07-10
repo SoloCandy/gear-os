@@ -194,7 +194,10 @@ see [`GEAR_RATIO_MIN/MAX` and `FINAL_DRIVE_MIN/MAX`](index.html) in `index.html`
 - **No power/drag curve.** Only peak HP/torque and their RPMs are used — GEAR.OS can't
   tell you whether the car actually has enough power to *reach* redline in top gear
   before drag caps it out at a lower speed. Treat "Desired Top Speed" as a target to
-  gear for, not a guaranteed outcome.
+  gear for, not a guaranteed outcome. The **ⓘ** tooltip on that field suggests the fix:
+  rather than guessing a number, pick a gear tall enough that the car runs out of pull
+  before redline in-game, hold full throttle, and use the speed where the speedometer
+  actually plateaus — that's the car's real top speed, not a spec-sheet figure.
 - **Shift-at-redline assumption.** All shifts are assumed to happen exactly at Max RPM.
 
 ---
