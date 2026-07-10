@@ -99,18 +99,27 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .hint{font-size:10px;color:#6b7280;margin-top:4px}
 .ro{padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:2px;
     display:flex;justify-content:space-between;align-items:baseline}
-.ro-col{display:block}
-.ro-col.top{border-color:#e2e8f033}
-.ro-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
 .rl{font-size:10px;color:#9ca3af;letter-spacing:1px;text-transform:uppercase}
 .rv{font-size:22px;font-weight:700;color:#e2e8f0}
 .rv-sm{font-size:18px;font-weight:700;color:#e2e8f0}
 .ru{font-size:10px;color:#6b7280;margin-left:4px}
 .tag{font-size:9px;color:#94a3b8;background:#020617;border:1px solid #1e293b;border-radius:2px;
     padding:1px 5px;letter-spacing:1px}
-.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 .pbar{display:block;flex:1;height:5px;background:#020617;border-radius:2px;overflow:hidden}
 .pbar-fill{display:block;height:100%;background:#e2e8f0}
+.grows{display:flex;flex-direction:column;gap:6px}
+.grow{display:flex;align-items:center;gap:14px;padding:10px 14px;background:#0f172a;
+    border:1px solid #1e293b;border-radius:2px}
+.grow.top{border-color:#e2e8f033}
+.grow-label{flex:0 0 92px;font-size:11px;color:#9ca3af;letter-spacing:1px;
+    text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.grow-shift{flex:1 1 160px;display:flex;align-items:center;gap:8px;min-width:0}
+.grow-speed{flex:0 0 116px;font-size:12px;color:#cbd5e1;text-align:right;white-space:nowrap}
+.grow-ratio{flex:0 0 96px;text-align:right}
+@media(max-width:560px){
+  .grow{flex-wrap:wrap}
+  .grow-shift{flex:1 1 100%;order:4}
+}
 .warn{color:#f59e0b;font-size:11px;padding:8px 10px;background:#1c1408;
     border:1px solid #78350f;border-radius:2px;margin:10px 12px 0}
 .err{color:#f87171;font-size:12px;padding:16px;}
@@ -658,31 +667,6 @@ function App(){
             <div className="card"><div className="cb err">{result.error}</div></div>
           :<React.Fragment>
             <div className="card">
-              <div className="ch">Recommended Final Drive</div>
-              <div className="cb">
-                <div className="ro">
-                  <span className="rl">Final Drive</span>
-                  <span><span className="rv">{round(result.finalDrive,2).toFixed(2)}</span></span>
-                </div>
-                <div className="hint" style={{marginTop:8}}>
-                  Solved to hit {dispSpeed(topSpeed)} at redline in top gear
-                  {target1stSpeed!=null&&<React.Fragment> and {dispSpeed(target1stSpeed)} in 1st gear</React.Fragment>}.
-                </div>
-              </div>
-              {!result.feasible&&
-                <div className="warn">
-                  Couldn't fit every ratio inside Forza's {GEAR_RATIO_MIN.toFixed(2)}–{GEAR_RATIO_MAX.toFixed(2)}
-                  {' '}gear ratio and {FINAL_DRIVE_MIN.toFixed(2)}–{FINAL_DRIVE_MAX.toFixed(2)} Final Drive ranges
-                  {' '}while hitting every target:
-                  {result.topSpeedMissed&&
-                    <div>Top gear reaches {dispSpeed(result.actualTopSpeed)} instead of {dispSpeed(topSpeed)}.</div>}
-                  {result.firstGearMissed&&
-                    <div>1st gear reaches {dispSpeed(result.actualFirstGearSpeed)} instead of {dispSpeed(target1stSpeed)}.</div>}
-                  Try a different target speed, gear count, or tire radius.
-                </div>}
-            </div>
-
-            <div className="card">
               <div className="ch">RPM vs Speed</div>
               <div className="cb">
                 <GearChart gears={result.gears} shifts={result.shifts} maxRpm={maxRpm}
@@ -691,47 +675,48 @@ function App(){
             </div>
 
             <div className="card">
-              <div className="ch">Gear Ratios</div>
+              <div className="ch">Gearing</div>
               <div className="cb">
-                <div className="stat-grid">
+                <div className="hint">
+                  Solved to hit {dispSpeed(topSpeed)} at redline in top gear
+                  {target1stSpeed!=null&&<React.Fragment> and {dispSpeed(target1stSpeed)} in 1st gear</React.Fragment>}.
+                </div>
+                {!result.feasible&&
+                  <div className="warn">
+                    Couldn't fit every ratio inside Forza's {GEAR_RATIO_MIN.toFixed(2)}–{GEAR_RATIO_MAX.toFixed(2)}
+                    {' '}gear ratio and {FINAL_DRIVE_MIN.toFixed(2)}–{FINAL_DRIVE_MAX.toFixed(2)} Final Drive ranges
+                    {' '}while hitting every target:
+                    {result.topSpeedMissed&&
+                      <div>Top gear reaches {dispSpeed(result.actualTopSpeed)} instead of {dispSpeed(topSpeed)}.</div>}
+                    {result.firstGearMissed&&
+                      <div>1st gear reaches {dispSpeed(result.actualFirstGearSpeed)} instead of {dispSpeed(target1stSpeed)}.</div>}
+                    Try a different target speed, gear count, or tire radius.
+                  </div>}
+                <div className="grows" style={{marginTop:10}}>
+                  <div className="grow">
+                    <div className="grow-label">FD</div>
+                    <div className="grow-shift"/>
+                    <div className="grow-speed"/>
+                    <div className="grow-ratio"><span className="rv">{round(result.finalDrive,2).toFixed(2)}</span></div>
+                  </div>
                   {result.gears.map(g=>{
                     const isTop=g.gear===result.gears.length;
+                    const shift=g.gear>=2?result.shifts[g.gear-2]:null;
                     return (
-                      <div key={g.gear} className={`ro ro-col${isTop?' top':''}`}>
-                        <div className="ro-hdr">
-                          <span className="rl">Gear {g.gear}</span>
-                          {isTop&&<span className="tag">TOP</span>}
+                      <div key={g.gear} className={`grow${isTop?' top':''}`}>
+                        <div className="grow-label">Gear {g.gear}{isTop&&<span className="tag">TOP</span>}</div>
+                        <div className="grow-shift">
+                          {shift&&<React.Fragment>
+                            <span className="rl" style={{whiteSpace:'nowrap'}}>{Math.round(shift.landingRpm)} rpm</span>
+                            <span className="pbar"><span className="pbar-fill" style={{width:round(shift.powerBandPct,0)+'%'}}/></span>
+                            <span className="ru" style={{marginLeft:0,whiteSpace:'nowrap'}}>{round(shift.powerBandPct,0)}%</span>
+                          </React.Fragment>}
                         </div>
-                        <div style={{display:'flex',alignItems:'baseline',gap:3}}>
-                          <span className={isTop?'rv':'rv-sm'}>{g.ratio.toFixed(2)}</span>
-                        </div>
-                        <div className="ru" style={{marginLeft:0,marginTop:2}}>{dispSpeed(g.speedAtRedline)} @ redline</div>
+                        <div className="grow-speed">{dispSpeed(g.speedAtRedline)}</div>
+                        <div className="grow-ratio"><span className={isTop?'rv':'rv-sm'}>{g.ratio.toFixed(2)}</span></div>
                       </div>
                     );
                   })}
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="ch">Shift Analysis</div>
-              <div className="cb">
-                <div className="stat-grid">
-                  {result.shifts.map(s=>(
-                    <div key={s.from} className="ro ro-col">
-                      <div className="ro-hdr">
-                        <span className="rl">{s.from} → {s.to}</span>
-                      </div>
-                      <div style={{display:'flex',alignItems:'baseline',gap:3}}>
-                        <span className="rv-sm">{Math.round(s.landingRpm)}</span>
-                        <span className="ru">rpm</span>
-                      </div>
-                      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6}}>
-                        <span className="pbar"><span className="pbar-fill" style={{width:round(s.powerBandPct,0)+'%'}}/></span>
-                        <span className="ru" style={{marginLeft:0,whiteSpace:'nowrap'}}>{round(s.powerBandPct,0)}%</span>
-                      </div>
-                    </div>
-                  ))}
                 </div>
               </div>
             </div>

@@ -161,12 +161,12 @@ only reshapes the curve *between* those two fixed endpoints.
 
 ## Outputs
 
-- **Final Drive**
-- **RPM vs Speed chart** — the classic sawtooth: each gear climbs from its landing RPM to
-  redline as speed rises, then drops straight back down at that same speed the instant you
-  shift. Dashed lines mark Redline, Peak HP RPM, and Peak Torque RPM.
-- **Gear Ratios** (1 → N), each with its theoretical top speed at redline
-- **Shift Analysis** — landing RPM and % power band used for every shift
+- **RPM vs Speed chart**, at the top — the classic sawtooth: each gear climbs from its
+  landing RPM to redline as speed rises, then drops straight back down at that same speed
+  the instant you shift. Dashed lines mark Redline, Peak HP RPM, and Peak Torque RPM.
+- **Gearing** — one full-width row per gear (plus a Final Drive row on top), left to right:
+  gear number, shift-in RPM and % power band used (Gear 1 has none — there's no shift into
+  it), speed at redline, and the ratio itself.
 
 ---
 
