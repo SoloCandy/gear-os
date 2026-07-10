@@ -394,11 +394,11 @@ function GearChart({gears,shifts,maxRpm,peakHpRpm,peakTorqueRpm,metricUnits}){
            style={{display:'block',background:'#020617',borderRadius:3}}>
         {Array.from({length:gridCols+1}).map((_,i)=>{
           const x=padL+(i/gridCols)*plotW;
-          return <line key={'gx'+i} x1={x} y1={padT} x2={x} y2={H-padB} stroke="#0f172a" strokeWidth={1}/>;
+          return <line key={'gx'+i} x1={x} y1={padT} x2={x} y2={H-padB} stroke="#293548" strokeWidth={1}/>;
         })}
         {Array.from({length:gridRows+1}).map((_,i)=>{
           const y=padT+(i/gridRows)*plotH;
-          return <line key={'gy'+i} x1={padL} y1={y} x2={W-padR} y2={y} stroke="#0f172a" strokeWidth={1}/>;
+          return <line key={'gy'+i} x1={padL} y1={y} x2={W-padR} y2={y} stroke="#293548" strokeWidth={1}/>;
         })}
         {ticks.map(t=>(
           <text key={'y'+t} x={padL-6} y={sy(t*yMax)+3} textAnchor="end" fontSize={11}
@@ -497,11 +497,11 @@ function DynoInput({maxRpm,setMaxRpm,peakHpRpm,setHpRpm,setAutoHp,peakTorqueRpm,
         onContextMenu={e=>e.preventDefault()}>
         {Array.from({length:11}).map((_,i)=>{
           const x=padL+(i/10)*plotW;
-          return <line key={'gx'+i} x1={x} y1={padT} x2={x} y2={H-padB} stroke="#0f172a" strokeWidth={1}/>;
+          return <line key={'gx'+i} x1={x} y1={padT} x2={x} y2={H-padB} stroke="#293548" strokeWidth={1}/>;
         })}
         {Array.from({length:9}).map((_,i)=>{
           const y=padT+(i/8)*plotH;
-          return <line key={'gy'+i} x1={padL} y1={y} x2={W-padR} y2={y} stroke="#0f172a" strokeWidth={1}/>;
+          return <line key={'gy'+i} x1={padL} y1={y} x2={W-padR} y2={y} stroke="#293548" strokeWidth={1}/>;
         })}
         {ticks.map(t=>(
           <text key={'t'+t} x={rpmToX(t*axisMaxRpm)} y={H-padB+20} textAnchor="middle" fontSize={12}
