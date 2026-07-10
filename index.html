@@ -408,8 +408,24 @@ function GearChart({gears,shifts,maxRpm,peakHpRpm,peakTorqueRpm,metricUnits}){
 function DynoInput({maxRpm,setMaxRpm,peakHpRpm,setHpRpm,setAutoHp,peakTorqueRpm,setTorqueRpm,setAutoTorque,scale,setScale}){
   const svgRef=useRef(null);
   const [dragging,setDragging]=useState(null); // 'tq'|'hp'|'redline'|null
+  // viewBox width is kept equal to the SVG's real rendered width (via
+  // ResizeObserver) so 1 coordinate unit = 1 real pixel. Without this, a
+  // fixed viewBox (e.g. 700) squeezed into a ~280px-wide sidebar forces the
+  // browser to scale everything down ~0.4x to preserve the aspect ratio,
+  // which both shrinks the fonts and letterboxes blank space above/below.
+  const [measuredWidth,setMeasuredWidth]=useState(280);
+  useEffect(()=>{
+    const el=svgRef.current;
+    if(!el)return;
+    const ro=new ResizeObserver(entries=>{
+      const w=entries[0].contentRect.width;
+      if(w>0)setMeasuredWidth(Math.round(w));
+    });
+    ro.observe(el);
+    return()=>ro.disconnect();
+  },[]);
   const axisMaxRpm=scale*1000;
-  const W=700,H=260,padL=12,padR=12,padT=56,padB=30;
+  const W=measuredWidth,H=220,padL=10,padR=10,padT=54,padB=26;
   const plotW=W-padL-padR,plotH=H-padT-padB;
 
   const rpmToX=rpm=>padL+clamp(rpm/axisMaxRpm,0,1)*plotW;
@@ -463,10 +479,14 @@ function DynoInput({maxRpm,setMaxRpm,peakHpRpm,setHpRpm,setAutoHp,peakTorqueRpm,
         ))}
         {lines.map(l=>{
           const x=rpmToX(l.rpm);
+          // Center-anchoring this label on the line overflows the SVG edge
+          // once the line sits near either boundary — anchor to whichever
+          // side keeps the text on-screen instead.
+          const anchor=x>W-65?'end':x<65?'start':'middle';
           return (
             <React.Fragment key={l.key}>
               <line x1={x} y1={padT} x2={x} y2={H-padB} stroke={l.color} strokeWidth={2.5}/>
-              <text x={x} y={l.labelY} textAnchor="middle" fontSize={13} fontWeight="700" fill={l.color}
+              <text x={x} y={l.labelY} textAnchor={anchor} fontSize={13} fontWeight="700" fill={l.color}
                 fontFamily="JetBrains Mono, monospace">{l.label} {Math.round(l.rpm)}</text>
               <rect x={x-11} y={padT} width={22} height={H-padB-padT} fill="transparent"
                 style={{cursor:'ew-resize'}} onPointerDown={startDrag(l.key)}/>
