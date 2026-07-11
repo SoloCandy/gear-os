@@ -218,42 +218,15 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
     return Math.pow(t,powerFactor);
   };
 
-  // Overall gearing spread (Ratio_1/Ratio_N) produced by landing every shift's
-  // RPM along a line from `startDrop` (1st->2nd shift) to Peak HP RPM (last
-  // shift), interpolated across the numShifts-1 shifts in between per the
-  // bias curve above.
-  const spreadForStartDrop=startDrop=>{
-    let spread=1;
-    for(let i=0;i<numShifts;i++){
-      const drop=startDrop+(peakHpRpm-startDrop)*shiftProgress(i);
-      spread*=maxRpm/drop;
-    }
-    return spread;
-  };
-
-  // Normally the 1st->2nd shift lands at Peak Torque RPM (the Variable Power
-  // Band default). If Target 1st Gear Speed is set, top gear's speed and 1st
-  // gear's speed both need to be hit exactly — but their ratio is fixed by
-  // the interpolation above, so instead of picking one over the other, solve
-  // for whatever landing RPM (in place of Peak Torque RPM) makes the
-  // resulting spread match exactly what both targets require simultaneously.
-  // spreadForStartDrop is strictly decreasing in startDrop, so bisect for it.
-  let startDropRpm=peakTorqueRpm;
-  if(target1stPct!=null){
-    // Direct solve: pin the 1st->2nd shift's landing RPM to a percentage of
-    // the Peak Torque RPM -> Max RPM band (same % the Gearing table reports
-    // per shift below), independent of Desired Top Speed.
-    startDropRpm=maxRpm-(target1stPct/100)*(maxRpm-peakTorqueRpm);
-  }else if(target1stMph!=null){
-    const requiredSpread=topSpeedMph/target1stMph;
-    let low=0,high=maxRpm,iterations=0;
-    while(high-low>1&&iterations<50){
-      const mid=(low+high)/2;
-      if(spreadForStartDrop(mid)>requiredSpread)low=mid;else high=mid;
-      iterations++;
-    }
-    startDropRpm=(low+high)/2;
-  }
+  // Landing RPM for the 1st->2nd shift: pinned to a % of the Peak Torque RPM
+  // -> Max RPM band when AUTO % Powerband is set, otherwise the Variable
+  // Power Band default (Peak Torque RPM itself, i.e. 100% of that band).
+  // This is entirely independent of Target 1st Gear Speed below — gear 1's
+  // own ratio is solved separately in closed form, so the two never fight
+  // over the same variable and can both be set at once.
+  const startDropRpm=target1stPct!=null
+    ?maxRpm-(target1stPct/100)*(maxRpm-peakTorqueRpm)
+    :peakTorqueRpm;
 
   // Target landing RPM for each shift g -> g+1 (g = 1..N-1), interpolated
   // from startDropRpm (first shift) to the HP peak (last shift) per the
@@ -272,10 +245,19 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
     rawRatio[g]=rawRatio[g+1]*(maxRpm/landingRpm[g]);
   }
 
-  // Solve Final Drive so top gear hits Desired Top Speed at Max RPM. When
-  // Target 1st Gear Speed was set, the startDropRpm solve above already
-  // makes 1st gear land on its target too, at this same Final Drive.
+  // Solve Final Drive so top gear hits Desired Top Speed at Max RPM.
   const fdRaw=maxRpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*rawRatio[N]*topSpeedMph);
+
+  // Target 1st Gear Speed overrides gear 1's raw ratio directly, independent
+  // of the chain above (and therefore of the 1st->2nd shift's landing RPM).
+  // ratio*FD is scale-invariant (same reasoning as the normalization below),
+  // so this works before `s` is picked: whatever ratio*FD product yields the
+  // target speed at Max RPM, divided by the not-yet-normalized fdRaw, gives
+  // the correctly-scaled raw ratio.
+  if(target1stMph!=null){
+    const requiredRatioFdProduct=maxRpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*target1stMph);
+    rawRatio[1]=requiredRatioFdProduct/fdRaw;
+  }
 
   // Normalize: find a uniform scale s (ratio[g]*=s, FD/=s) that fits both the
   // per-gear range and the Final Drive range. This is safe because the product
@@ -303,17 +285,14 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   const actualTopSpeed=gears[N-1].speedAtRedline;
   const topSpeedMissed=Math.abs(actualTopSpeed-topSpeedMph)>Math.max(0.5,topSpeedMph*0.01);
   const actualFirstGearSpeed=gears[0].speedAtRedline;
-  // Only check against target1stMph if it actually drove the solve — when
-  // target1stPct is set, it overrides target1stMph entirely (see startDropRpm
-  // above), so target1stMph was never attempted and can't have been "missed".
-  const firstGearMissed=target1stPct==null&&target1stMph!=null&&Math.abs(actualFirstGearSpeed-target1stMph)>Math.max(0.5,target1stMph*0.01);
+  const firstGearMissed=target1stMph!=null&&Math.abs(actualFirstGearSpeed-target1stMph)>Math.max(0.5,target1stMph*0.01);
 
   // % of the power band (Peak Torque RPM -> Max RPM) still ahead of the landing
   // point — i.e. how much of it the next gear actually gets to use. Landing at
   // the torque peak (low gears) uses the full band (100%); landing near
   // redline (high gears) leaves little band left to use (low %). Always
-  // measured against the engine's actual Peak Torque RPM, even if a solved
-  // startDropRpm (for Target 1st Gear Speed) lands somewhere else.
+  // measured against the engine's actual Peak Torque RPM, even if AUTO %
+  // Powerband pinned the 1st->2nd shift somewhere else.
   const shifts=[];
   for(let g=1;g<N;g++){
     const pct=clamp((maxRpm-landingRpm[g])/(maxRpm-peakTorqueRpm)*100,0,100);
@@ -723,8 +702,9 @@ function App(){
   const peakHpRpm=autoHp?round(maxRpm*0.90):hpRpm;
   const peakTorqueRpm=autoTorque?round(maxRpm*0.65):torqueRpm;
 
-  // % Powerband (AUTO mode) wins over Target 1st Gear Speed when both are
-  // set — it's the more direct placement of the 1st->2nd shift.
+  // Target 1st Gear Speed (gear 1's own ratio) and AUTO % Powerband (the
+  // 1st->2nd shift's landing RPM) are fully independent — both can be set
+  // at once, see computeGearing.
   const result=useMemo(()=>computeGearing({
     maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireRadius,
     target1stMph:target1stSpeed,
@@ -797,7 +777,7 @@ function App(){
               <div className="field">
                 <label>
                   <span style={{display:'flex',alignItems:'center',gap:4}}>Target 1st Gear Speed
-                    <Hint text="Useful if wheelspin off the line or a corner-exit speed matters more than outright top speed. Solves the 1st→2nd shift point so 1st gear hits this exact speed at redline, without giving up Desired Top Speed in top gear. Overridden if Spacing Curve Bias below is set to AUTO with a % Powerband value — that takes priority over this."/>
+                    <Hint text="Useful if wheelspin off the line or a corner-exit speed matters more than outright top speed. Solves gear 1's own ratio directly so it hits this exact speed at redline, without giving up Desired Top Speed in top gear. Independent of Spacing Curve Bias's AUTO % Powerband below — that separately controls where the 1st→2nd shift lands, so both can be set at once."/>
                   </span>
                   {target1stSpeed!=null&&
                     <span className="auto-tog" onClick={()=>setTarget1stSpeed(null)}>CLEAR</span>}
@@ -819,14 +799,14 @@ function App(){
                 />
                 <div className="hint">
                   {metricUnits?'km/h':'mph'} — leave blank to ignore. When set, GEAR.OS solves
-                  for both this and Desired Top Speed at once by adjusting where the 1st→2nd
-                  shift lands (instead of always landing at Peak Torque RPM).
+                  gear 1's ratio directly so it hits this exact speed at redline, without
+                  changing Desired Top Speed or where the 1st→2nd shift lands.
                 </div>
               </div>
               <div className="field">
                 <label>
                   <span style={{display:'flex',alignItems:'center',gap:4}}>Spacing Curve Bias
-                    <Hint text="MANUAL: reshape how the RPM drop changes shift-to-shift, between the 1st→2nd and last shift's fixed landing points (doesn't touch either endpoint). AUTO: instead of a bias number, pin the 1st→2nd shift itself to a percentage of the Peak Torque RPM→Max RPM band — 100% matches the default (lands at Peak Torque RPM), lower values pull the shift point up toward redline and make 1st gear taller. Takes priority over Target 1st Gear Speed above if both are set."/>
+                    <Hint text="MANUAL: reshape how the RPM drop changes shift-to-shift, between the 1st→2nd and last shift's fixed landing points (doesn't touch either endpoint). AUTO: instead of a bias number, pin the 1st→2nd shift itself to a percentage of the Peak Torque RPM→Max RPM band — 100% matches the default (lands at Peak Torque RPM), lower values pull that shift point up toward redline, reshaping every gear above 1st the same way MANUAL bias would. Independent of Target 1st Gear Speed above — that separately controls gear 1's own ratio, so both can be set at once."/>
                   </span>
                   {biasMode==='auto'&&target1stPct!=null&&
                     <span className="auto-tog" onClick={()=>setTarget1stPct(null)}>CLEAR</span>}
@@ -875,8 +855,9 @@ function App(){
                     }}
                   />
                   <div className="hint">
-                    % of Peak Torque RPM→Max RPM band — leave blank to ignore (falls back to
-                    Target 1st Gear Speed above, or the default 100%/Peak Torque RPM landing).
+                    % of Peak Torque RPM→Max RPM band — leave blank to fall back to the
+                    default 100%/Peak Torque RPM landing. Works independently of Target 1st
+                    Gear Speed above; both apply at once if both are set.
                   </div>
                 </React.Fragment>}
               </div>
@@ -901,10 +882,12 @@ function App(){
               <div className="cb">
                 <div className="hint">
                   Solved to hit {dispSpeed(topSpeed)} at redline in top gear
-                  {biasMode==='auto'&&target1stPct!=null?
-                    <React.Fragment> and the 1st→2nd shift at {round(target1stPct,0)}% powerband</React.Fragment>
-                  :target1stSpeed!=null&&
-                    <React.Fragment> and {dispSpeed(target1stSpeed)} in 1st gear</React.Fragment>}.
+                  {(()=>{
+                    const parts=[];
+                    if(target1stSpeed!=null)parts.push(`${dispSpeed(target1stSpeed)} in 1st gear`);
+                    if(biasMode==='auto'&&target1stPct!=null)parts.push(`the 1st→2nd shift at ${round(target1stPct,0)}% powerband`);
+                    return parts.length?' and '+parts.join(', and '):'';
+                  })()}.
                 </div>
                 {!result.feasible&&
                   <div className="warn">
