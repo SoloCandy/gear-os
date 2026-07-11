@@ -187,7 +187,7 @@ function speedAtRpm(rpm,ratio,finalDrive,tireRadius){
   return rpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*ratio*finalDrive);
 }
 
-function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireRadius,target1stMph,tightnessBias}){
+function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireRadius,target1stMph,target1stPct,tightnessBias}){
   const N=gearCount;
   if(!(N>=2&&N<=10))return {error:'Gear count must be between 2 and 10.'};
   if(!(maxRpm>0))return {error:'Max RPM must be positive.'};
@@ -196,6 +196,9 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   if(target1stMph!=null){
     if(!(target1stMph>0))return {error:'Target 1st gear speed must be positive.'};
     if(!(target1stMph<topSpeedMph))return {error:'Target 1st Gear Speed must be less than Desired Top Speed.'};
+  }
+  if(target1stPct!=null&&!(target1stPct>=0&&target1stPct<=100)){
+    return {error:'1st Gear % Powerband must be between 0 and 100.'};
   }
   if(!(peakTorqueRpm>0&&peakHpRpm>peakTorqueRpm&&maxRpm>=peakHpRpm)){
     return {error:'RPMs must satisfy 0 < Peak Torque RPM < Peak HP RPM ≤ Max RPM.'};
@@ -236,7 +239,12 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   // resulting spread match exactly what both targets require simultaneously.
   // spreadForStartDrop is strictly decreasing in startDrop, so bisect for it.
   let startDropRpm=peakTorqueRpm;
-  if(target1stMph!=null){
+  if(target1stPct!=null){
+    // Direct solve: pin the 1st->2nd shift's landing RPM to a percentage of
+    // the Peak Torque RPM -> Max RPM band (same % the Gearing table reports
+    // per shift below), independent of Desired Top Speed.
+    startDropRpm=maxRpm-(target1stPct/100)*(maxRpm-peakTorqueRpm);
+  }else if(target1stMph!=null){
     const requiredSpread=topSpeedMph/target1stMph;
     let low=0,high=maxRpm,iterations=0;
     while(high-low>1&&iterations<50){
@@ -657,6 +665,8 @@ function App(){
   const [topSpeed,setTopSpeed]=useState(()=>saved.topSpeed??180); // canonical: mph
   const [tireRadius,setTireRadius]=useState(()=>saved.tireRadius??330); // canonical: mm
   const [target1stSpeed,setTarget1stSpeed]=useState(()=>saved.target1stSpeed??null); // canonical: mph, null = unset
+  const [target1stPct,setTarget1stPct]=useState(()=>saved.target1stPct??null); // 0..100, null = unset
+  const [target1stMode,setTarget1stMode]=useState(()=>saved.target1stMode??'mph'); // 'mph' | 'pct' — which field drives the solve
   const [tightnessBias,setTightnessBias]=useState(()=>saved.tightnessBias??0); // -100..100, 0 = linear
   const [dynoScale,setDynoScale]=useState(()=>saved.dynoScale??9); // x1000 rpm, dyno graph axis width
 
@@ -666,11 +676,11 @@ function App(){
     try{
       localStorage.setItem(PERSIST_KEY,JSON.stringify({
         metricUnits,maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,
-        topSpeed,tireRadius,target1stSpeed,tightnessBias,dynoScale,
+        topSpeed,tireRadius,target1stSpeed,target1stPct,target1stMode,tightnessBias,dynoScale,
       }));
     }catch(e){/* private browsing or quota — silently skip */}
   },[metricUnits,maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,
-     topSpeed,tireRadius,target1stSpeed,tightnessBias,dynoScale]);
+     topSpeed,tireRadius,target1stSpeed,target1stPct,target1stMode,tightnessBias,dynoScale]);
 
   const [sidebarOpen,setSidebarOpen]=useState(true);
   const [isMobile,setIsMobile]=useState(false);
@@ -701,7 +711,8 @@ function App(){
     setMaxRpm(8000);setAutoHp(true);setHpRpm(7200);setAutoTorque(true);setTorqueRpm(5200);setDynoScale(9);
   };
   const resetGearbox=()=>{
-    setGearCount(6);setTopSpeed(180);setTireRadius(330);setTarget1stSpeed(null);setTightnessBias(0);
+    setGearCount(6);setTopSpeed(180);setTireRadius(330);setTarget1stSpeed(null);
+    setTarget1stPct(null);setTarget1stMode('mph');setTightnessBias(0);
   };
 
   const dispSpeed=mph=>metricUnits?`${round(mph*KMH_PER_MPH,1)} km/h`:`${round(mph,1)} mph`;
@@ -711,8 +722,11 @@ function App(){
 
   const result=useMemo(()=>computeGearing({
     maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireRadius,
-    target1stMph:target1stSpeed,tightnessBias
-  }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius,target1stSpeed,tightnessBias]);
+    target1stMph:target1stMode==='mph'?target1stSpeed:null,
+    target1stPct:target1stMode==='pct'?target1stPct:null,
+    tightnessBias
+  }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius,
+      target1stMode,target1stSpeed,target1stPct,tightnessBias]);
 
   return (
     <div className="app-shell">
@@ -777,36 +791,64 @@ function App(){
                 hint="Rolling radius, not rim size — half the tire's full loaded diameter. Bigger tires need a numerically higher Final Drive to hit the same top speed."/>
               <div className="field">
                 <label>
-                  <span style={{display:'flex',alignItems:'center',gap:4}}>Target 1st Gear Speed
-                    <Hint text="Useful if wheelspin off the line or a corner-exit speed matters more than outright top speed. Solves the 1st→2nd shift point so 1st gear hits this exact speed at redline, without giving up Desired Top Speed in top gear."/>
+                  <span style={{display:'flex',alignItems:'center',gap:4}}>1st Gear Target
+                    <Hint text="Solves the 1st→2nd shift point instead of always landing it at Peak Torque RPM. SPEED: hit an exact 1st-gear speed at redline without giving up Desired Top Speed. % POWERBAND: pin the shift directly to a percentage of the Peak Torque RPM→Max RPM band — 100% matches the default (lands at Peak Torque RPM), lower values pull the shift point up toward redline, which pulls 1st gear's ratio closer to 2nd's and makes 1st gear taller (reaches a higher speed before shifting). Solved independently of Desired Top Speed."/>
                   </span>
-                  {target1stSpeed!=null&&
-                    <span className="auto-tog" onClick={()=>setTarget1stSpeed(null)}>CLEAR</span>}
+                  {((target1stMode==='mph'&&target1stSpeed!=null)||(target1stMode==='pct'&&target1stPct!=null))&&
+                    <span className="auto-tog" onClick={()=>{setTarget1stSpeed(null);setTarget1stPct(null);}}>CLEAR</span>}
                 </label>
-                <input
-                  className="finput"
-                  type="number"
-                  placeholder="Optional"
-                  min={metricUnits?round(10*KMH_PER_MPH,0):10}
-                  max={metricUnits?round(120*KMH_PER_MPH,0):120}
-                  step={1}
-                  value={target1stSpeed==null?'':(metricUnits?round(target1stSpeed*KMH_PER_MPH,0):target1stSpeed)}
-                  onChange={e=>{
-                    const raw=e.target.value;
-                    if(raw===''){setTarget1stSpeed(null);return;}
-                    const v=Number(raw);
-                    setTarget1stSpeed(metricUnits?v/KMH_PER_MPH:v);
-                  }}
-                />
-                <div className="hint">
-                  {metricUnits?'km/h':'mph'} — leave blank to ignore. When set, GEAR.OS solves
-                  for both this and Desired Top Speed at once by adjusting where the 1st→2nd
-                  shift lands (instead of always landing at Peak Torque RPM).
+                <div style={{display:'flex',gap:3,marginBottom:6}}>
+                  <button className={`tbtn${target1stMode==='mph'?' on':''}`} style={{flex:1}}
+                    onClick={()=>setTarget1stMode('mph')}>SPEED</button>
+                  <button className={`tbtn${target1stMode==='pct'?' on':''}`} style={{flex:1}}
+                    onClick={()=>setTarget1stMode('pct')}>% POWERBAND</button>
                 </div>
+                {target1stMode==='mph'?<React.Fragment>
+                  <input
+                    className="finput"
+                    type="number"
+                    placeholder="Optional"
+                    min={metricUnits?round(10*KMH_PER_MPH,0):10}
+                    max={metricUnits?round(120*KMH_PER_MPH,0):120}
+                    step={1}
+                    value={target1stSpeed==null?'':(metricUnits?round(target1stSpeed*KMH_PER_MPH,0):target1stSpeed)}
+                    onChange={e=>{
+                      const raw=e.target.value;
+                      if(raw===''){setTarget1stSpeed(null);return;}
+                      const v=Number(raw);
+                      setTarget1stSpeed(metricUnits?v/KMH_PER_MPH:v);
+                    }}
+                  />
+                  <div className="hint">
+                    {metricUnits?'km/h':'mph'} — leave blank to ignore. When set, GEAR.OS solves
+                    for both this and Desired Top Speed at once by adjusting where the 1st→2nd
+                    shift lands (instead of always landing at Peak Torque RPM).
+                  </div>
+                </React.Fragment>:<React.Fragment>
+                  <input
+                    className="finput"
+                    type="number"
+                    placeholder="Optional"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={target1stPct==null?'':target1stPct}
+                    onChange={e=>{
+                      const raw=e.target.value;
+                      if(raw===''){setTarget1stPct(null);return;}
+                      setTarget1stPct(clamp(Number(raw),0,100));
+                    }}
+                  />
+                  <div className="hint">
+                    % of Peak Torque RPM→Max RPM band — leave blank to ignore. 100% lands the
+                    1st→2nd shift at Peak Torque RPM (the default); lower values pull it up
+                    toward redline, making 1st gear taller.
+                  </div>
+                </React.Fragment>}
               </div>
               <NumField label="Spacing Curve Bias" value={tightnessBias} onChange={setTightnessBias}
                 min={-100} max={100} step={1}
-                unit="-100 tightens low gears sooner · 0 linear · +100 tightens high gears"
+                unit="-100 tightens gears above 1st · 0 linear · +100 widens gears below top"
                 hint="Reshapes how RPM drops change shift-to-shift, between the 1st→2nd and last shift's fixed landing points — it doesn't touch either endpoint. Leave at 0 unless a specific gear needs to feel tighter or wider."/>
           </Sec>
         </div>
