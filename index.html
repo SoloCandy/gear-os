@@ -303,7 +303,10 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   const actualTopSpeed=gears[N-1].speedAtRedline;
   const topSpeedMissed=Math.abs(actualTopSpeed-topSpeedMph)>Math.max(0.5,topSpeedMph*0.01);
   const actualFirstGearSpeed=gears[0].speedAtRedline;
-  const firstGearMissed=target1stMph!=null&&Math.abs(actualFirstGearSpeed-target1stMph)>Math.max(0.5,target1stMph*0.01);
+  // Only check against target1stMph if it actually drove the solve — when
+  // target1stPct is set, it overrides target1stMph entirely (see startDropRpm
+  // above), so target1stMph was never attempted and can't have been "missed".
+  const firstGearMissed=target1stPct==null&&target1stMph!=null&&Math.abs(actualFirstGearSpeed-target1stMph)>Math.max(0.5,target1stMph*0.01);
 
   // % of the power band (Peak Torque RPM -> Max RPM) still ahead of the landing
   // point — i.e. how much of it the next gear actually gets to use. Landing at
@@ -666,7 +669,7 @@ function App(){
   const [tireRadius,setTireRadius]=useState(()=>saved.tireRadius??330); // canonical: mm
   const [target1stSpeed,setTarget1stSpeed]=useState(()=>saved.target1stSpeed??null); // canonical: mph, null = unset
   const [target1stPct,setTarget1stPct]=useState(()=>saved.target1stPct??null); // 0..100, null = unset
-  const [target1stMode,setTarget1stMode]=useState(()=>saved.target1stMode??'mph'); // 'mph' | 'pct' — which field drives the solve
+  const [biasMode,setBiasMode]=useState(()=>saved.biasMode??'manual'); // 'manual' | 'auto' — Spacing Curve Bias section
   const [tightnessBias,setTightnessBias]=useState(()=>saved.tightnessBias??0); // -100..100, 0 = linear
   const [dynoScale,setDynoScale]=useState(()=>saved.dynoScale??9); // x1000 rpm, dyno graph axis width
 
@@ -676,11 +679,11 @@ function App(){
     try{
       localStorage.setItem(PERSIST_KEY,JSON.stringify({
         metricUnits,maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,
-        topSpeed,tireRadius,target1stSpeed,target1stPct,target1stMode,tightnessBias,dynoScale,
+        topSpeed,tireRadius,target1stSpeed,target1stPct,biasMode,tightnessBias,dynoScale,
       }));
     }catch(e){/* private browsing or quota — silently skip */}
   },[metricUnits,maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,
-     topSpeed,tireRadius,target1stSpeed,target1stPct,target1stMode,tightnessBias,dynoScale]);
+     topSpeed,tireRadius,target1stSpeed,target1stPct,biasMode,tightnessBias,dynoScale]);
 
   const [sidebarOpen,setSidebarOpen]=useState(true);
   const [isMobile,setIsMobile]=useState(false);
@@ -712,7 +715,7 @@ function App(){
   };
   const resetGearbox=()=>{
     setGearCount(6);setTopSpeed(180);setTireRadius(330);setTarget1stSpeed(null);
-    setTarget1stPct(null);setTarget1stMode('mph');setTightnessBias(0);
+    setTarget1stPct(null);setBiasMode('manual');setTightnessBias(0);
   };
 
   const dispSpeed=mph=>metricUnits?`${round(mph*KMH_PER_MPH,1)} km/h`:`${round(mph,1)} mph`;
@@ -720,13 +723,15 @@ function App(){
   const peakHpRpm=autoHp?round(maxRpm*0.90):hpRpm;
   const peakTorqueRpm=autoTorque?round(maxRpm*0.65):torqueRpm;
 
+  // % Powerband (AUTO mode) wins over Target 1st Gear Speed when both are
+  // set — it's the more direct placement of the 1st->2nd shift.
   const result=useMemo(()=>computeGearing({
     maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireRadius,
-    target1stMph:target1stMode==='mph'?target1stSpeed:null,
-    target1stPct:target1stMode==='pct'?target1stPct:null,
+    target1stMph:target1stSpeed,
+    target1stPct:biasMode==='auto'?target1stPct:null,
     tightnessBias
   }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius,
-      target1stMode,target1stSpeed,target1stPct,tightnessBias]);
+      target1stSpeed,biasMode,target1stPct,tightnessBias]);
 
   return (
     <div className="app-shell">
@@ -791,40 +796,70 @@ function App(){
                 hint="Rolling radius, not rim size — half the tire's full loaded diameter. Bigger tires need a numerically higher Final Drive to hit the same top speed."/>
               <div className="field">
                 <label>
-                  <span style={{display:'flex',alignItems:'center',gap:4}}>1st Gear Target
-                    <Hint text="Solves the 1st→2nd shift point instead of always landing it at Peak Torque RPM. SPEED: hit an exact 1st-gear speed at redline without giving up Desired Top Speed. % POWERBAND: pin the shift directly to a percentage of the Peak Torque RPM→Max RPM band — 100% matches the default (lands at Peak Torque RPM), lower values pull the shift point up toward redline, which pulls 1st gear's ratio closer to 2nd's and makes 1st gear taller (reaches a higher speed before shifting). Solved independently of Desired Top Speed."/>
+                  <span style={{display:'flex',alignItems:'center',gap:4}}>Target 1st Gear Speed
+                    <Hint text="Useful if wheelspin off the line or a corner-exit speed matters more than outright top speed. Solves the 1st→2nd shift point so 1st gear hits this exact speed at redline, without giving up Desired Top Speed in top gear. Overridden if Spacing Curve Bias below is set to AUTO with a % Powerband value — that takes priority over this."/>
                   </span>
-                  {((target1stMode==='mph'&&target1stSpeed!=null)||(target1stMode==='pct'&&target1stPct!=null))&&
-                    <span className="auto-tog" onClick={()=>{setTarget1stSpeed(null);setTarget1stPct(null);}}>CLEAR</span>}
+                  {target1stSpeed!=null&&
+                    <span className="auto-tog" onClick={()=>setTarget1stSpeed(null)}>CLEAR</span>}
+                </label>
+                <input
+                  className="finput"
+                  type="number"
+                  placeholder="Optional"
+                  min={metricUnits?round(10*KMH_PER_MPH,0):10}
+                  max={metricUnits?round(120*KMH_PER_MPH,0):120}
+                  step={1}
+                  value={target1stSpeed==null?'':(metricUnits?round(target1stSpeed*KMH_PER_MPH,0):target1stSpeed)}
+                  onChange={e=>{
+                    const raw=e.target.value;
+                    if(raw===''){setTarget1stSpeed(null);return;}
+                    const v=Number(raw);
+                    setTarget1stSpeed(metricUnits?v/KMH_PER_MPH:v);
+                  }}
+                />
+                <div className="hint">
+                  {metricUnits?'km/h':'mph'} — leave blank to ignore. When set, GEAR.OS solves
+                  for both this and Desired Top Speed at once by adjusting where the 1st→2nd
+                  shift lands (instead of always landing at Peak Torque RPM).
+                </div>
+              </div>
+              <div className="field">
+                <label>
+                  <span style={{display:'flex',alignItems:'center',gap:4}}>Spacing Curve Bias
+                    <Hint text="MANUAL: reshape how the RPM drop changes shift-to-shift, between the 1st→2nd and last shift's fixed landing points (doesn't touch either endpoint). AUTO: instead of a bias number, pin the 1st→2nd shift itself to a percentage of the Peak Torque RPM→Max RPM band — 100% matches the default (lands at Peak Torque RPM), lower values pull the shift point up toward redline and make 1st gear taller. Takes priority over Target 1st Gear Speed above if both are set."/>
+                  </span>
+                  {biasMode==='auto'&&target1stPct!=null&&
+                    <span className="auto-tog" onClick={()=>setTarget1stPct(null)}>CLEAR</span>}
                 </label>
                 <div style={{display:'flex',gap:3,marginBottom:6}}>
-                  <button className={`tbtn${target1stMode==='mph'?' on':''}`} style={{flex:1}}
-                    onClick={()=>setTarget1stMode('mph')}>SPEED</button>
-                  <button className={`tbtn${target1stMode==='pct'?' on':''}`} style={{flex:1}}
-                    onClick={()=>setTarget1stMode('pct')}>% POWERBAND</button>
+                  <button className={`tbtn${biasMode==='manual'?' on':''}`} style={{flex:1}}
+                    onClick={()=>setBiasMode('manual')}>MANUAL</button>
+                  <button className={`tbtn${biasMode==='auto'?' on':''}`} style={{flex:1}}
+                    onClick={()=>setBiasMode('auto')}>AUTO</button>
                 </div>
-                {target1stMode==='mph'?<React.Fragment>
+                {biasMode==='manual'?<React.Fragment>
                   <input
                     className="finput"
                     type="number"
-                    placeholder="Optional"
-                    min={metricUnits?round(10*KMH_PER_MPH,0):10}
-                    max={metricUnits?round(120*KMH_PER_MPH,0):120}
+                    min={-100}
+                    max={100}
                     step={1}
-                    value={target1stSpeed==null?'':(metricUnits?round(target1stSpeed*KMH_PER_MPH,0):target1stSpeed)}
-                    onChange={e=>{
-                      const raw=e.target.value;
-                      if(raw===''){setTarget1stSpeed(null);return;}
-                      const v=Number(raw);
-                      setTarget1stSpeed(metricUnits?v/KMH_PER_MPH:v);
-                    }}
+                    value={tightnessBias}
+                    onChange={e=>setTightnessBias(Number(e.target.value))}
                   />
-                  <div className="hint">
-                    {metricUnits?'km/h':'mph'} — leave blank to ignore. When set, GEAR.OS solves
-                    for both this and Desired Top Speed at once by adjusting where the 1st→2nd
-                    shift lands (instead of always landing at Peak Torque RPM).
-                  </div>
-                </React.Fragment>:<React.Fragment>
+                  <input
+                    className="sli"
+                    type="range"
+                    min={-100}
+                    max={100}
+                    step={1}
+                    value={clamp(tightnessBias,-100,100)}
+                    style={{background:`linear-gradient(to right,#e2e8f0 ${clamp((tightnessBias+100)/2,0,100)}%,#1e293b ${clamp((tightnessBias+100)/2,0,100)}%)`}}
+                    onChange={e=>setTightnessBias(Number(e.target.value))}
+                  />
+                  <div className="hint">-100 tightens gears above 1st · 0 linear · +100 widens gears below top</div>
+                </React.Fragment>
+                :<React.Fragment>
                   <input
                     className="finput"
                     type="number"
@@ -840,16 +875,11 @@ function App(){
                     }}
                   />
                   <div className="hint">
-                    % of Peak Torque RPM→Max RPM band — leave blank to ignore. 100% lands the
-                    1st→2nd shift at Peak Torque RPM (the default); lower values pull it up
-                    toward redline, making 1st gear taller.
+                    % of Peak Torque RPM→Max RPM band — leave blank to ignore (falls back to
+                    Target 1st Gear Speed above, or the default 100%/Peak Torque RPM landing).
                   </div>
                 </React.Fragment>}
               </div>
-              <NumField label="Spacing Curve Bias" value={tightnessBias} onChange={setTightnessBias}
-                min={-100} max={100} step={1}
-                unit="-100 tightens gears above 1st · 0 linear · +100 widens gears below top"
-                hint="Reshapes how RPM drops change shift-to-shift, between the 1st→2nd and last shift's fixed landing points — it doesn't touch either endpoint. Leave at 0 unless a specific gear needs to feel tighter or wider."/>
           </Sec>
         </div>
 
@@ -871,7 +901,10 @@ function App(){
               <div className="cb">
                 <div className="hint">
                   Solved to hit {dispSpeed(topSpeed)} at redline in top gear
-                  {target1stSpeed!=null&&<React.Fragment> and {dispSpeed(target1stSpeed)} in 1st gear</React.Fragment>}.
+                  {biasMode==='auto'&&target1stPct!=null?
+                    <React.Fragment> and the 1st→2nd shift at {round(target1stPct,0)}% powerband</React.Fragment>
+                  :target1stSpeed!=null&&
+                    <React.Fragment> and {dispSpeed(target1stSpeed)} in 1st gear</React.Fragment>}.
                 </div>
                 {!result.feasible&&
                   <div className="warn">
