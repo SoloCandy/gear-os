@@ -170,6 +170,31 @@ const KMH_PER_MPH=1.60934;
 function round(n,d){const m=Math.pow(10,d||0);return Math.round(n*m)/m;}
 function clamp(n,lo,hi){return Math.min(hi,Math.max(lo,n));}
 
+// Ported from SUSP.OS (same formula, same tolerant parsing) so a tire size
+// like "255/40R19" fills the same geometric radius SUSP.OS would show. This
+// is a starting point, not gospel — Forza's actual rolling radius has been
+// observed to differ from this static sidewall geometry by anywhere from
+// ~+1% to -10% depending on the car, likely because Forza's own Top Speed
+// stat is a real power/drag-limited simulation result, not a pure redline×
+// gearing calculation. Verify against that stat and nudge Tire Radius below
+// if needed — don't treat the auto-filled number as final.
+const parseTyre=str=>{
+  const s=String(str??'').trim();
+  if(!s)return null;
+  const tokens=s.match(/\d+(?:\.\d+)?/g);
+  if(!tokens||!tokens.length)return null;
+  const width=+tokens[0];
+  if(!(width>=50&&width<=500))return null;
+  if(tokens.length===1)return{width,aspectRatio:null,rimDiameter:null,diameter:null,radius:null};
+  const aspect=+tokens[1];
+  if(!(aspect>=10&&aspect<=100))return null;
+  if(tokens.length===2)return{width,aspectRatio:aspect,rimDiameter:null,diameter:null,radius:null};
+  const rim=+tokens[2];
+  if(!(rim>=8&&rim<=30))return null;
+  const diameter=rim*25.4+2*(width*aspect/100);
+  return{width,aspectRatio:aspect,rimDiameter:rim,diameter,radius:diameter/2};
+};
+
 // ---- Persistence ----
 // Single flat key covering every input (gear-os has no chassis/tune split
 // like susp-os to justify separate keys). See docs/PERSISTENCE.md.
@@ -187,7 +212,7 @@ function speedAtRpm(rpm,ratio,finalDrive,tireRadius){
   return rpm*2*Math.PI*tireRadius*60/(MM_PER_MILE*ratio*finalDrive);
 }
 
-function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireRadius,target1stMph,target1stPct,tightnessBias}){
+function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireRadius,target1stMph,target1stPct,tightnessBias,topGearRatioOverride}){
   const N=gearCount;
   if(!(N>=2&&N<=10))return {error:'Gear count must be between 2 and 10.'};
   if(!(maxRpm>0))return {error:'Max RPM must be positive.'};
@@ -298,6 +323,16 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
     gears.push({gear:g,ratio,speedAtRedline:speedAtRpm(maxRpm,ratio,finalDrive,tireRadius)});
   }
 
+  // Manual top-gear override: a surgical alternative to the tire-radius/FD
+  // workaround for matching Forza's own (power/drag-limited, not purely
+  // kinematic) Top Speed stat. Only replaces the last gear's ratio — Final
+  // Drive and every other gear stay exactly as solved above, same as
+  // dragging just the top-gear slider in Forza's own tune screen.
+  if(topGearRatioOverride!=null){
+    const ratio=clamp(topGearRatioOverride,GEAR_RATIO_MIN,GEAR_RATIO_MAX);
+    gears[N-1]={gear:N,ratio,speedAtRedline:speedAtRpm(maxRpm,ratio,finalDrive,tireRadius)};
+  }
+
   // If a gear ratio or Final Drive had to clamp to Forza's range, one or both
   // targets may come up short — check each directly rather than trusting `feasible`.
   const actualTopSpeed=gears[N-1].speedAtRedline;
@@ -315,6 +350,17 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   for(let g=1;g<N;g++){
     const pct=clamp((maxRpm-landingRpm[g])/(maxRpm-peakTorqueRpm)*100,0,100);
     shifts.push({from:g,to:g+1,landingRpm:landingRpm[g],powerBandPct:pct});
+  }
+
+  // The override above changes gears[N-1]'s ratio without touching landingRpm,
+  // so the last shift's stats (computed from landingRpm) would otherwise show
+  // the pre-override RPM/% — stale and inconsistent with the ratio and speed
+  // columns next to it. Recompute that one entry from the actual ratios so
+  // the whole TOP row agrees with itself.
+  if(topGearRatioOverride!=null&&N>=2){
+    const actualLandingRpm=maxRpm*gears[N-1].ratio/gears[N-2].ratio;
+    const pct=clamp((maxRpm-actualLandingRpm)/(maxRpm-peakTorqueRpm)*100,0,100);
+    shifts[shifts.length-1]={...shifts[shifts.length-1],landingRpm:actualLandingRpm,powerBandPct:pct};
   }
 
   return {finalDrive,gears,shifts,feasible:!topSpeedMissed&&!firstGearMissed,
@@ -664,11 +710,23 @@ function App(){
   const [gearCount,setGearCount]=useState(()=>saved.gearCount??6);
   const [topSpeed,setTopSpeed]=useState(()=>saved.topSpeed??180); // canonical: mph
   const [tireRadius,setTireRadius]=useState(()=>saved.tireRadius??330); // canonical: mm
+  const [tireSize,setTireSize]=useState(()=>saved.tireSize??''); // e.g. "255/40R19" — feeds tireRadius when tireInputMode is 'size'
+  const [tireInputMode,setTireInputMode]=useState(()=>saved.tireInputMode??'size'); // 'size' | 'radius' — which of the two above is shown/editable
+  const [topGearOverride,setTopGearOverride]=useState(()=>saved.topGearOverride??null); // optional manual top-gear ratio, bypasses the solved value for that gear only
   const [target1stSpeed,setTarget1stSpeed]=useState(()=>saved.target1stSpeed??null); // canonical: mph, null = unset
   const [target1stPct,setTarget1stPct]=useState(()=>saved.target1stPct??null); // 0..100, null = unset
   const [target1stMode,setTarget1stMode]=useState(()=>saved.target1stMode??'mph'); // 'mph' | 'pct' — which field drives the solve
   const [tightnessBias,setTightnessBias]=useState(()=>saved.tightnessBias??0); // -100..100, 0 = linear
   const [dynoScale,setDynoScale]=useState(()=>saved.dynoScale??9); // x1000 rpm, dyno graph axis width
+
+  // Re-derive tireRadius from tireSize whenever size mode is active — covers
+  // both typing a new size and switching back into size mode after tireRadius
+  // was hand-edited in radius mode (which otherwise would go stale).
+  useEffect(()=>{
+    if(tireInputMode!=='size')return;
+    const p=parseTyre(tireSize);
+    if(p?.radius!=null)setTireRadius(round(p.radius,1));
+  },[tireInputMode,tireSize]); // eslint-disable-line
 
   // Auto-save on every change — mirrors susp-os's usePersist hook, just
   // flattened to one combined snapshot instead of per-slice keys.
@@ -676,11 +734,13 @@ function App(){
     try{
       localStorage.setItem(PERSIST_KEY,JSON.stringify({
         metricUnits,maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,
-        topSpeed,tireRadius,target1stSpeed,target1stPct,target1stMode,tightnessBias,dynoScale,
+        topSpeed,tireRadius,tireSize,tireInputMode,topGearOverride,
+        target1stSpeed,target1stPct,target1stMode,tightnessBias,dynoScale,
       }));
     }catch(e){/* private browsing or quota — silently skip */}
   },[metricUnits,maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,
-     topSpeed,tireRadius,target1stSpeed,target1stPct,target1stMode,tightnessBias,dynoScale]);
+     topSpeed,tireRadius,tireSize,tireInputMode,topGearOverride,
+     target1stSpeed,target1stPct,target1stMode,tightnessBias,dynoScale]);
 
   const [sidebarOpen,setSidebarOpen]=useState(true);
   const [isMobile,setIsMobile]=useState(false);
@@ -711,7 +771,8 @@ function App(){
     setMaxRpm(8000);setAutoHp(true);setHpRpm(7200);setAutoTorque(true);setTorqueRpm(5200);setDynoScale(9);
   };
   const resetGearbox=()=>{
-    setGearCount(6);setTopSpeed(180);setTireRadius(330);setTarget1stSpeed(null);
+    setGearCount(6);setTopSpeed(180);setTireRadius(330);setTireSize('');setTireInputMode('size');
+    setTopGearOverride(null);setTarget1stSpeed(null);
     setTarget1stPct(null);setTarget1stMode('mph');setTightnessBias(0);
   };
 
@@ -724,9 +785,9 @@ function App(){
     maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireRadius,
     target1stMph:target1stMode==='mph'?target1stSpeed:null,
     target1stPct:target1stMode==='pct'?target1stPct:null,
-    tightnessBias
+    tightnessBias,topGearRatioOverride:topGearOverride
   }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius,
-      target1stMode,target1stSpeed,target1stPct,tightnessBias]);
+      target1stMode,target1stSpeed,target1stPct,tightnessBias,topGearOverride]);
 
   return (
     <div className="app-shell">
@@ -787,8 +848,73 @@ function App(){
                 max={metricUnits?round(300*KMH_PER_MPH,0):300} step={1}
                 unit={metricUnits?'km/h':'mph'}
                 hint="For the most accurate Final Drive, don't guess this number. In-game, pick a gear tall enough that you run out of pull before redline, hold full throttle, and watch the speedometer stop climbing — that plateau is your car's real top speed. Use it here instead of a spec-sheet figure."/>
-              <NumField label="Tire Radius" value={tireRadius} onChange={setTireRadius} min={125} max={500} step={1} unit="mm (rolling radius)"
-                hint="Rolling radius, not rim size — half the tire's full loaded diameter. Bigger tires need a numerically higher Final Drive to hit the same top speed."/>
+              <div className="field">
+                <label>
+                  <span style={{display:'flex',alignItems:'center',gap:4}}>Tire Radius
+                    <Hint text="Two ways to set the driven wheel's rolling radius (rear for RWD, front for FWD, either for AWD). TIRE SIZE: enter e.g. 255/40R19 and the radius computes via the same geometric formula SUSP.OS uses. RADIUS: type the mm value directly. Either way, treat the number as a starting point — Forza's actual in-game Top Speed stat has been observed to differ from this geometric figure by anywhere from ~1% to ~10%, in either direction, most likely because that stat is a real power/drag-limited simulation result, not a pure redline × gearing calculation. Verify against it and adjust, or use the Top Gear Ratio override below instead."/>
+                  </span>
+                </label>
+                <div style={{display:'flex',gap:3,marginBottom:6}}>
+                  <button className={`tbtn${tireInputMode==='size'?' on':''}`} style={{flex:1}}
+                    onClick={()=>setTireInputMode('size')}>TIRE SIZE</button>
+                  <button className={`tbtn${tireInputMode==='radius'?' on':''}`} style={{flex:1}}
+                    onClick={()=>setTireInputMode('radius')}>RADIUS (mm)</button>
+                </div>
+                {tireInputMode==='size'?(()=>{
+                  const parsedSize=parseTyre(tireSize);
+                  const isBlank=tireSize.trim()==='';
+                  return(<React.Fragment>
+                    <input type="text" className="finput" value={tireSize}
+                      onChange={e=>setTireSize(e.target.value)}
+                      placeholder="255/40r19"
+                      style={{borderColor:isBlank||parsedSize?undefined:'#7f1d1d'}}/>
+                    <div className="hint">
+                      {isBlank
+                        ?'blank — switch to RADIUS to set it directly'
+                        :parsedSize
+                          ?parsedSize.radius!=null
+                            ?`Ø ${parsedSize.diameter.toFixed(0)} mm → r ${parsedSize.radius.toFixed(1)} mm`
+                            :'incomplete — need width/aspect/rim (e.g. 255/40R19)'
+                          :'invalid format'}
+                    </div>
+                  </React.Fragment>);
+                })():(()=>{
+                  const pct=clamp((tireRadius-125)/(500-125)*100,0,100);
+                  return(<React.Fragment>
+                    <input className="finput" type="number" min={125} max={500} step={1}
+                      value={tireRadius} onChange={e=>setTireRadius(Number(e.target.value))}/>
+                    <input className="sli" type="range" min={125} max={500} step={1}
+                      value={clamp(tireRadius,125,500)}
+                      style={{background:`linear-gradient(to right,#e2e8f0 ${pct}%,#1e293b ${pct}%)`}}
+                      onChange={e=>setTireRadius(Number(e.target.value))}/>
+                    <div className="hint">mm (rolling radius)</div>
+                  </React.Fragment>);
+                })()}
+              </div>
+              <div className="field">
+                <label>
+                  <span style={{display:'flex',alignItems:'center',gap:4}}>Top Gear Ratio
+                    <Hint text="Optional manual override for just the top gear's ratio — a direct, surgical alternative to nudging Tire Radius when dialing in top speed against Forza's own Top Speed stat. Final Drive and every other gear stay exactly as solved; only this one gear's ratio (and therefore its speed at redline, shown in the GEARING table below) changes. Matches dragging just the top-gear slider in Forza's tune screen, rather than the Final Drive slider which scales every gear at once."/>
+                  </span>
+                  {topGearOverride!=null&&
+                    <span className="auto-tog" onClick={()=>setTopGearOverride(null)}>CLEAR</span>}
+                </label>
+                <input
+                  className="finput"
+                  type="number"
+                  placeholder="Optional"
+                  min={GEAR_RATIO_MIN}
+                  max={GEAR_RATIO_MAX}
+                  step={0.01}
+                  value={topGearOverride==null?'':topGearOverride}
+                  onChange={e=>{
+                    const raw=e.target.value;
+                    if(raw===''){setTopGearOverride(null);return;}
+                    const v=Number(raw);
+                    if(Number.isFinite(v))setTopGearOverride(v);
+                  }}/>
+                <div className="hint">leave blank to use the solved top-gear ratio</div>
+              </div>
               <div className="field">
                 <label>
                   <span style={{display:'flex',alignItems:'center',gap:4}}>1st Gear Target
@@ -873,12 +999,17 @@ function App(){
                   Solved to hit {dispSpeed(topSpeed)} at redline in top gear
                   {target1stSpeed!=null&&<React.Fragment> and {dispSpeed(target1stSpeed)} in 1st gear</React.Fragment>}.
                 </div>
-                {!result.feasible&&
+                {topGearOverride!=null&&result.topSpeedMissed&&
+                  <div className="hint" style={{marginTop:4}}>
+                    Top Gear Ratio is manually overridden — top gear reaches {dispSpeed(result.actualTopSpeed)}
+                    {' '}instead of the {dispSpeed(topSpeed)} target. Expected — that's now under your control, not a solve failure.
+                  </div>}
+                {((result.topSpeedMissed&&topGearOverride==null)||result.firstGearMissed)&&
                   <div className="warn">
                     Couldn't fit every ratio inside Forza's {GEAR_RATIO_MIN.toFixed(2)}–{GEAR_RATIO_MAX.toFixed(2)}
                     {' '}gear ratio and {FINAL_DRIVE_MIN.toFixed(2)}–{FINAL_DRIVE_MAX.toFixed(2)} Final Drive ranges
                     {' '}while hitting every target:
-                    {result.topSpeedMissed&&
+                    {result.topSpeedMissed&&topGearOverride==null&&
                       <div>Top gear reaches {dispSpeed(result.actualTopSpeed)} instead of {dispSpeed(topSpeed)}.</div>}
                     {result.firstGearMissed&&
                       <div>1st gear reaches {dispSpeed(result.actualFirstGearSpeed)} instead of {dispSpeed(target1stSpeed)}.</div>}

@@ -82,6 +82,19 @@ displayed speed between mph and km/h. Tire Radius always stays in mm regardless 
 toggle, matching Forza's own tuning menu (and [SUSP.OS](https://github.com/solocandy/susp-os),
 which also works in tire *radius*, not diameter).
 
+TIRE SIZE mode computes radius using SUSP.OS's own geometric formula (rim + 2×sidewall from
+width/aspect ratio), so the two apps at least start from the same number. That number is a
+starting point, not a guarantee: in testing across two cars, Forza's actual in-game Top Speed
+stat matched this geometric radius anywhere from ~1% off to ~10% off, in either direction —
+almost certainly because Forza's Top Speed stat is a real power/drag-limited simulation
+result, not a pure redline × gearing calculation the way GEAR.OS's math assumes. There's no
+known formula to correct for this ahead of time. After solving a tune, verify Desired Top
+Speed against Forza's own Top Speed stat, then close the gap with either lever: switch to
+RADIUS mode and nudge the mm value (only moves Final Drive — every gear's speed shifts by the
+same proportion, same effect as Forza's Final Drive slider), or set Top Gear Ratio (touches
+only the last gear's own ratio and speed, same as dragging just its slider in Forza — use this
+when the lower gears are already dialed in and only the top-speed gear needs a nudge).
+
 ## Sidebar
 
 Inputs live in a collapsible sidebar (☰ in the header toggles it), mirroring SUSP.OS: the
@@ -116,7 +129,8 @@ and it reads the RPM off the line's position.
 | Peak Torque RPM | AUTO defaults to 65% of Max RPM if you don't know the exact figure |
 | Gear Count | 2–10 |
 | Desired Top Speed | mph or km/h (IMP/MET toggle), at Max RPM in top gear |
-| Tire Radius | mm, rolling radius (not diameter, not rim size) — always mm, unaffected by IMP/MET |
+| Tire Radius | A **TIRE SIZE / RADIUS (mm)** toggle switches which of the two is shown. TIRE SIZE (default): e.g. `255/40R19`, computes radius via the same geometric formula SUSP.OS uses. RADIUS (mm): type the rolling radius directly (not diameter, not rim size). Whichever mode is active drives the actual calculation; switching modes doesn't lose either value. See caveat below |
+| Top Gear Ratio | Optional. Manually overrides just the last gear's ratio — Final Drive and every other gear stay exactly as solved. Leave blank to use the solved value |
 | Target 1st Gear Speed | Optional, mph or km/h. Leave blank for default behavior (below) |
 | Spacing Curve Bias | -100 to +100, default 0 (linear). See below |
 

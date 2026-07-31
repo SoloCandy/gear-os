@@ -7,7 +7,7 @@ uses a single combined key.
 
 | Key | Holds | Default |
 |---|---|---|
-| `gearos_inputs_v1` | Every input: `metricUnits`, `maxRpm`, `autoHp`, `hpRpm`, `autoTorque`, `torqueRpm`, `gearCount`, `topSpeed`, `tireRadius`, `target1stSpeed`, `tightnessBias`, `dynoScale` | See `index.html`'s `useState` initializers |
+| `gearos_inputs_v1` | Every input: `metricUnits`, `maxRpm`, `autoHp`, `hpRpm`, `autoTorque`, `torqueRpm`, `gearCount`, `topSpeed`, `tireRadius`, `tireSize`, `tireInputMode`, `topGearOverride`, `target1stSpeed`, `target1stPct`, `target1stMode`, `tightnessBias`, `dynoScale` | See `index.html`'s `useState` initializers |
 
 ## How it works
 
