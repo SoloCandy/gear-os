@@ -76,11 +76,11 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .cb{padding:12px}
 .field{margin-bottom:12px}
 .field:last-child{margin-bottom:0}
-.field label{display:flex;justify-content:space-between;align-items:center;
+.field label,.field .label{display:flex;justify-content:space-between;align-items:center;
     font-size:10px;color:#9ca3af;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
-.field label .auto-tog{text-transform:none;letter-spacing:0;font-size:10px;color:#6b7280;
+.field .auto-tog{text-transform:none;letter-spacing:0;font-size:10px;color:#6b7280;
     cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px}
-.field label .auto-tog input{cursor:pointer}
+.field .auto-tog input{cursor:pointer}
 .finput{width:100%;background:#0a0f1a;border:1px solid #1e293b;border-radius:2px;
     color:#e2e8f0;font-family:var(--font-mono);font-size:14px;padding:7px 8px;outline:none;
     transition:border-color .12s}
@@ -214,7 +214,7 @@ function speedAtRpm(rpm,ratio,finalDrive,tireRadius){
 
 function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,tireRadius,target1stMph,target1stPct,tightnessBias,topGearRatioOverride}){
   const N=gearCount;
-  if(!(N>=2&&N<=10))return {error:'Gear count must be between 2 and 10.'};
+  if(!(Number.isInteger(N)&&N>=2&&N<=10))return {error:'Gear count must be a whole number between 2 and 10.'};
   if(!(maxRpm>0))return {error:'Max RPM must be positive.'};
   if(!(topSpeedMph>0))return {error:'Desired top speed must be positive.'};
   if(!(tireRadius>0))return {error:'Tire radius must be positive.'};
@@ -305,16 +305,12 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   // Normalize: find a uniform scale s (ratio[g]*=s, FD/=s) that fits both the
   // per-gear range and the Final Drive range. This is safe because the product
   // ratio*FD (and thus every RPM/speed relationship, including 1st gear's) is
-  // invariant under it.
-  const sMax=Math.min(GEAR_RATIO_MAX/rawRatio[1],fdRaw/FINAL_DRIVE_MIN);
-  const sMin=Math.max(GEAR_RATIO_MIN/rawRatio[N],fdRaw/FINAL_DRIVE_MAX);
-  let feasible=true, s=1;
-  if(sMin<=sMax){
-    s=clamp(1,sMin,sMax);
-  }else{
-    feasible=false;
-    s=clamp(1,GEAR_RATIO_MIN/rawRatio[N],GEAR_RATIO_MAX/rawRatio[1]);
-  }
+  // invariant under it. Take the s closest to 1 that suits Final Drive, then
+  // pull it into the gear-ratio range — when both ranges overlap this lands
+  // in the overlap; when they don't, it lands on the gear-range edge nearest
+  // Final Drive's range, so Final Drive clamps as little as possible.
+  const s=clamp(clamp(1,fdRaw/FINAL_DRIVE_MAX,fdRaw/FINAL_DRIVE_MIN),
+    GEAR_RATIO_MIN/rawRatio[N],GEAR_RATIO_MAX/rawRatio[1]);
 
   const finalDrive=clamp(fdRaw/s,FINAL_DRIVE_MIN,FINAL_DRIVE_MAX);
   const gears=[];
@@ -346,21 +342,13 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   // redline (high gears) leaves little band left to use (low %). Always
   // measured against the engine's actual Peak Torque RPM, even if a solved
   // startDropRpm (for Target 1st Gear Speed) lands somewhere else.
+  // Derived from the final ratios, not the landingRpm targets, so it stays
+  // true when a ratio was clamped or the top gear was overridden.
   const shifts=[];
   for(let g=1;g<N;g++){
-    const pct=clamp((maxRpm-landingRpm[g])/(maxRpm-peakTorqueRpm)*100,0,100);
-    shifts.push({from:g,to:g+1,landingRpm:landingRpm[g],powerBandPct:pct});
-  }
-
-  // The override above changes gears[N-1]'s ratio without touching landingRpm,
-  // so the last shift's stats (computed from landingRpm) would otherwise show
-  // the pre-override RPM/% — stale and inconsistent with the ratio and speed
-  // columns next to it. Recompute that one entry from the actual ratios so
-  // the whole TOP row agrees with itself.
-  if(topGearRatioOverride!=null&&N>=2){
-    const actualLandingRpm=maxRpm*gears[N-1].ratio/gears[N-2].ratio;
+    const actualLandingRpm=maxRpm*gears[g].ratio/gears[g-1].ratio;
     const pct=clamp((maxRpm-actualLandingRpm)/(maxRpm-peakTorqueRpm)*100,0,100);
-    shifts[shifts.length-1]={...shifts[shifts.length-1],landingRpm:actualLandingRpm,powerBandPct:pct};
+    shifts.push({from:g,to:g+1,landingRpm:actualLandingRpm,powerBandPct:pct});
   }
 
   return {finalDrive,gears,shifts,feasible:!topSpeedMissed&&!firstGearMissed,
@@ -427,13 +415,15 @@ function NumField({label,value,onChange,autoValue,auto,onAutoChange,min,max,step
   const pct=max>min?clamp((dispVal-min)/(max-min)*100,0,100):0;
   return (
     <div className="field">
-      <label>
+      {/* Not a <label>: a label forwards any click inside it (e.g. on the
+          Hint icon) to the checkbox, toggling AUTO by accident. */}
+      <div className="label">
         <span style={{display:'flex',alignItems:'center',gap:4}}>{label}{hint&&<Hint text={hint}/>}</span>
         {onAutoChange&&
           <span className="auto-tog" onClick={()=>onAutoChange(!auto)}>
-            <input type="checkbox" checked={auto} onChange={()=>onAutoChange(!auto)}/>AUTO
+            <input type="checkbox" checked={auto} readOnly style={{pointerEvents:'none'}}/>AUTO
           </span>}
-      </label>
+      </div>
       <input
         className="finput"
         type="number"
@@ -997,7 +987,7 @@ function App(){
               <div className="cb">
                 <div className="hint">
                   Solved to hit {dispSpeed(topSpeed)} at redline in top gear
-                  {target1stSpeed!=null&&<React.Fragment> and {dispSpeed(target1stSpeed)} in 1st gear</React.Fragment>}.
+                  {target1stMode==='mph'&&target1stSpeed!=null&&<React.Fragment> and {dispSpeed(target1stSpeed)} in 1st gear</React.Fragment>}.
                 </div>
                 {topGearOverride!=null&&result.topSpeedMissed&&
                   <div className="hint" style={{marginTop:4}}>

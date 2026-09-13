@@ -131,7 +131,7 @@ and it reads the RPM off the line's position.
 | Desired Top Speed | mph or km/h (IMP/MET toggle), at Max RPM in top gear |
 | Tire Radius | A **TIRE SIZE / RADIUS (mm)** toggle switches which of the two is shown. TIRE SIZE (default): e.g. `255/40R19`, computes radius via the same geometric formula SUSP.OS uses. RADIUS (mm): type the rolling radius directly (not diameter, not rim size). Whichever mode is active drives the actual calculation; switching modes doesn't lose either value. See caveat below |
 | Top Gear Ratio | Optional. Manually overrides just the last gear's ratio — Final Drive and every other gear stay exactly as solved. Leave blank to use the solved value |
-| Target 1st Gear Speed | Optional, mph or km/h. Leave blank for default behavior (below) |
+| 1st Gear Target | Optional. A **SPEED / % POWERBAND** toggle picks the mode: a 1st gear speed (mph or km/h), or a % of the Peak Torque RPM → Max RPM band for the 1st→2nd shift. Leave blank for default behavior (below) |
 | Spacing Curve Bias | -100 to +100, default 0 (linear). See below |
 
 ### Target 1st Gear Speed
@@ -152,6 +152,11 @@ against the real Peak Torque RPM, since that's the engine's actual property.
 Useful when wheelspin off the line or a corner-exit speed matters more than the exact
 shape of the default interpolation. If Forza's ratio/Final Drive ranges can't fit both
 targets, GEAR.OS reports which one (or both) came up short instead of silently picking one.
+
+**% POWERBAND mode** skips the solve and pins the 1st→2nd shift directly:
+`Landing RPM = Max RPM − (% / 100) × (Max RPM − Peak Torque RPM)`. 100% is the default
+(lands at Peak Torque RPM); lower values move the shift toward redline, making 1st gear
+taller. Final Drive is still solved from Desired Top Speed.
 
 ### Spacing Curve Bias
 
