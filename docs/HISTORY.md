@@ -2,6 +2,7 @@
 
 Bugs fixed and behaviour deliberately changed, newest first.
 
+- **Too-many-gears warning**: when the gear count can't fit Forza's limits, the warning now names the most gears that fit and has a USE N GEARS button. Top gear keeps missing the target in that case (decided, see KNOWN_ISSUES). Also fixed a negative dyno `<rect>` height while the graph is unmeasured.
 - **Mobile layout**: ported SUSP.OS's drawer fixes. The drawer is 88% of the screen (capped at 360px), slides out
   instead of popping, is kept out of the tab order when closed, and closes on a leftward swipe, Escape or a backdrop tap.
   The top bar drops the subtitle under 600px (116px to 53px tall at 390px wide). Text fields are 16px under

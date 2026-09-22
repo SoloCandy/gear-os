@@ -22,7 +22,7 @@ const ctx = { localStorage: { getItem: () => null }, Math, JSON, Number, Array, 
   btoa, atob, encodeURIComponent, decodeURIComponent };
 vm.createContext(ctx);
 vm.runInContext(html.slice(a, b) +
-  '\n;this.api={computeGearing,speedAtRpm,parseTyre,clamp,round,' +
+  '\n;this.api={computeGearing,maxFittingGears,speedAtRpm,parseTyre,clamp,round,' +
   'encodeInputs,decodeInputs,sanitizeGarage,garageUpsert,garageRemove,garageMerge,DEFAULT_INPUTS,CODEC_FIELDS,CODEC_VERSION,' +
   'GEAR_RATIO_MIN,GEAR_RATIO_MAX,FINAL_DRIVE_MIN,FINAL_DRIVE_MAX};', ctx);
 const G = ctx.api;
@@ -285,6 +285,19 @@ for (const t1 of [40, 55, 70]) {
   check('merge: adds new names', merged.length === 3);
   // Garage codes come from encodeInputs, so every one must pass CODE_RE.
   check('real codes accepted', G.sanitizeGarage([{ name: 'x', code: G.encodeInputs({ ...G.DEFAULT_INPUTS, gearCount: 9 }), savedAt: 1 }]).length === 1);
+}
+
+// ── too many gears: top gear misses, warning suggests a count that fits ──
+{
+  const r10 = run({ gearCount: 10 });
+  check('10 gears: top gear misses (too tall)', r10.topSpeedMissed && r10.actualTopSpeed > 180);
+  check('10 gears: 1st gear kept at max ratio', r10.gears[0].ratio === G.GEAR_RATIO_MAX);
+  check('10 gears: suggests 9', G.maxFittingGears({ ...BASE, gearCount: 10 }) === 9);
+  check('suggested count really fits', run({ gearCount: 9 }).feasible);
+  check('ignores top gear override', G.maxFittingGears({ ...BASE, gearCount: 10, topGearRatioOverride: 0.9 }) === 9);
+  // Miss caused by the target itself (no gear count fixes it) → null
+  check('unfixable miss → null', G.maxFittingGears({ ...BASE, gearCount: 6, topSpeedMph: 20 }) === null);
+  check('2 gears → null (nothing lower)', G.maxFittingGears({ ...BASE, gearCount: 2 }) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

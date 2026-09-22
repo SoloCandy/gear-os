@@ -4,11 +4,13 @@ Only what is still true.
 
 ## Limitations
 
-- **Over-wide spreads miss top speed, not 1st gear.** When the ratio spread needed
-  is wider than Forza allows (6.00 / 0.48 = 12.5, e.g. 10 gears with the default
-  engine), normalization pins 1st gear at 6.00 and clamps top gear up to 0.48.
-  Top speed comes out high (≈211 vs 180 mph in the test case). It is flagged
-  (`topSpeedMissed`), not hidden. Whether to give up 1st gear instead is still open.
+- **Too many gears for the engine: top gear misses, by design.** When the gear spread
+  needs more than Forza's limits allow (e.g. 10 gears with a wide torque→HP band at 180 mph),
+  1st gear stays at 6.00 and the top gear is clamped at 0.48. Top gear comes out too tall
+  (≈211 mph instead of 180) and the last shift barely drops the revs. We chose this over the
+  alternative, keeping top speed and squashing the low gears into near-duplicate 1st/2nd gears,
+  because either way one gear is wasted. The warning names the most gears that fit
+  (`maxFittingGears`) and offers a USE N GEARS button.
 - **Tire radius from a tire size is approximate.** Forza's effective rolling radius
   has been seen 1% above to 10% below the static geometry. Use the Top Gear
   override or nudge the radius to match the in-game Top Speed stat.

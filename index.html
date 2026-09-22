@@ -510,6 +510,19 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
     startDropRpm,peakHpRpm,peakTorqueRpm};
 }
 
+// Most gears (below the requested count) that hit every target inside
+// Forza's limits, or null if even fewer gears don't help (the miss comes from
+// the speed/tire/RPM inputs, not the gear count). With too many gears for the
+// engine's band the solver lets top gear miss its target (see KNOWN_ISSUES.md);
+// this is what the warning suggests instead. Ignores the top gear override.
+function maxFittingGears(args){
+  for(let n=args.gearCount-1;n>=2;n--){
+    const r=computeGearing({...args,gearCount:n,topGearRatioOverride:null});
+    if(!r.error&&r.feasible)return n;
+  }
+  return null;
+}
+
 // Hover (mouse) or tap (touch) info icon with a viewport-clamped tooltip.
 // Ported from susp-os's Hint component.
 function Hint({text}){
@@ -719,7 +732,7 @@ function DynoInput({maxRpm,setMaxRpm,peakHpRpm,setHpRpm,setAutoHp,peakTorqueRpm,
   },[]);
   const axisMaxRpm=scale*1000;
   const W=measuredWidth,padL=10,padR=10,padT=54,padB=26;
-  const plotW=W-padL-padR;
+  const plotW=Math.max(0,W-padL-padR); // 0 while unmeasured (hidden pane/tab) -- never a negative <rect> height
   const plotH=plotW*3/4; // grid itself is a 4:3 landscape rectangle
   const H=padT+plotH+padB;
 
@@ -1016,12 +1029,13 @@ function App(){
   const peakHpRpm=autoHp?round(maxRpm*0.90):hpRpm;
   const peakTorqueRpm=autoTorque?round(maxRpm*0.65):torqueRpm;
 
-  const result=useMemo(()=>computeGearing({
+  const solveArgs={
     maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph:topSpeed,tireRadius,
     target1stMph:target1stMode==='mph'?target1stSpeed:null,
     target1stPct:target1stMode==='pct'?target1stPct:null,
     tightnessBias,topGearRatioOverride:topGearOverride
-  }),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius,
+  };
+  const result=useMemo(()=>computeGearing(solveArgs),[maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeed,tireRadius,
       target1stMode,target1stSpeed,target1stPct,tightnessBias,topGearOverride]);
 
   return (
@@ -1320,8 +1334,13 @@ function App(){
                     Top Gear Ratio is manually overridden — top gear reaches {dispSpeed(result.actualTopSpeed)}
                     {' '}instead of the {dispSpeed(topSpeed)} target. Expected — that's now under your control, not a solve failure.
                   </div>}
-                {((result.topSpeedMissed&&topGearOverride==null)||result.firstGearMissed)&&
-                  <div className="warn">
+                {((result.topSpeedMissed&&topGearOverride==null)||result.firstGearMissed)&&(()=>{
+                  const fit=maxFittingGears(solveArgs);
+                  return <div className="warn">
+                    {fit!=null&&<div style={{marginBottom:6}}>
+                      <b>{gearCount} gears don't fit Forza's limits for this engine and top speed. The most that fit is {fit}.</b>
+                      {' '}<button className="tbtn" style={{marginLeft:4}} onClick={()=>setGearCount(fit)}>USE {fit} GEARS</button>
+                    </div>}
                     Couldn't fit every ratio inside Forza's {GEAR_RATIO_MIN.toFixed(2)}–{GEAR_RATIO_MAX.toFixed(2)}
                     {' '}gear ratio and {FINAL_DRIVE_MIN.toFixed(2)}–{FINAL_DRIVE_MAX.toFixed(2)} Final Drive ranges
                     {' '}while hitting every target:
@@ -1329,8 +1348,11 @@ function App(){
                       <div>Top gear reaches {dispSpeed(result.actualTopSpeed)} instead of {dispSpeed(topSpeed)}.</div>}
                     {result.firstGearMissed&&
                       <div>1st gear reaches {dispSpeed(result.actualFirstGearSpeed)} instead of {dispSpeed(target1stSpeed)}.</div>}
-                    Try a different target speed, gear count, or tire radius.
-                  </div>}
+                    {result.topSpeedMissed&&topGearOverride==null&&result.actualTopSpeed>topSpeed&&
+                      <div>Top gear is too tall, so the car will likely run out of power before redline and the last shift barely drops the revs.</div>}
+                    {fit==null&&'Try a different target speed, gear count, or tire radius.'}
+                  </div>;
+                })()}
                 <div className="grows" style={{marginTop:10}}>
                   <div className="grow">
                     <div className="grow-label">FD</div>
