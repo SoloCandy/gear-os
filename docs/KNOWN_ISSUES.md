@@ -37,3 +37,17 @@ Only what is still true.
      in different sections but both set where 1st gear ends, with one silently overriding
      the other. That needed special cases in the infeasibility banner and summary line,
      plus 0592502. One toggle in one section makes them mutually exclusive by construction.
+- **Equal time in each gear as a spacing target** (prototyped Sep 2026, never shipped).
+  Solving gears 2..N-1 for equal time, with the first and last shifts still at the peaks,
+  bunches the middle gears together. On the default 6-speed, 1st gear then tops out at
+  67 mph instead of 41, and the middle shifts land above peak HP (7134, 7461 vs 7000),
+  past the power peak. Time in a gear grows roughly with speed squared even without drag,
+  so similar times are not a sign of good gearing.
+- **Minimum-time spacing as a replacement solver** (prototyped Sep 2026, not shipped).
+  Choosing the middle gears for the fastest run from 1st gear at peak torque to 95% of
+  top speed was only 0.8–1.2% quicker than the current spacing across 5 to 8 speeds.
+  That is inside the model's error: the power curve is built from just the two peak
+  RPMs, drag is taken as using all power at the entered top speed, and the result
+  depends on the 95% end point. The fastest spacing keeps the same rising landings; it
+  only lands the middle shifts a little higher and the last below peak HP. Rerun the
+  comparison with `node tools/spacing-check.js`.
