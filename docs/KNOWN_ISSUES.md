@@ -25,4 +25,15 @@ Only what is still true.
   dyno marker left would close the drawer mid-drag.
 
 - **% Powerband as a Spacing Curve Bias AUTO mode** (0aaa553, reverted in 3a6ffd2).
-  The reasons were not recorded at the time. Fill them in if they are known.
+  % Powerband stays a mode of 1st Gear Target (SPEED / % POWERBAND). No reason was
+  recorded at the time; these were reconstructed from the diffs in Sep 2026:
+  1. **Different job.** Spacing Curve Bias reshapes the RPM drops *between* the fixed
+     1st→2nd and last shift points and never moves either one. % Powerband *moves* the
+     1st→2nd shift, so it is a 1st-gear target, not a curve shape.
+  2. **Hidden input still applied.** In AUTO the bias slider was hidden, but
+     `tightnessBias` was still passed to `computeGearing`, so a value you could not see
+     or reset kept shaping the result.
+  3. **Two controls for one decision.** Target 1st Gear Speed and AUTO % Powerband lived
+     in different sections but both set where 1st gear ends, with one silently overriding
+     the other. That needed special cases in the infeasibility banner and summary line,
+     plus 0592502. One toggle in one section makes them mutually exclusive by construction.
