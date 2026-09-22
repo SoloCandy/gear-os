@@ -8,6 +8,7 @@ uses a single combined key.
 | Key | Holds | Default |
 |---|---|---|
 | `gearos_inputs_v1` | Every input: `metricUnits`, `maxRpm`, `autoHp`, `hpRpm`, `autoTorque`, `torqueRpm`, `gearCount`, `topSpeed`, `tireRadius`, `tireSize`, `tireInputMode`, `topGearOverride`, `target1stSpeed`, `target1stPct`, `target1stMode`, `tightnessBias`, `dynoScale` | See `index.html`'s `useState` initializers |
+| `gearos_garage_v1` | Garage: `[{name, code, savedAt}]`, newest first. `code` is a share code (see CODEC.md) | `[]` |
 
 ## How it works
 
@@ -31,3 +32,18 @@ Same policy as SUSP.OS (see its own `docs/PERSISTENCE.md`): bump
 `_v1` → `_v2` only when a field's *meaning* changes such that an old stored
 value would now be misread (different unit, different valid range, a
 renamed enum) — not for adding a new field with a sensible default.
+
+## Garage
+
+Each save stores a **share code**, not raw inputs. Loading one goes through
+`decodeInputs`, so saves get the codec's defaults for new fields, clamping and
+version check for free. Saves never need their own migration.
+
+- Names are unique ignoring case, trimmed and ≤ 40 characters. Saving under an existing
+  name replaces it (the button reads REPLACE).
+- `sanitizeGarage` runs on every read (localStorage and RESTORE). It drops malformed
+  entries and de-dupes names, keeping the newest `savedAt`.
+- **BACKUP** downloads `gear-os-garage-YYYY-MM-DD.json` as `{app:'gear-os', garage:[...]}`.
+  **RESTORE** merges a backup into the current garage (`garageMerge`). On a name
+  clash the newer save wins, and nothing is deleted.
+- The section RESETs never touch the garage.

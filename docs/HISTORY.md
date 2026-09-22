@@ -2,6 +2,7 @@
 
 Bugs fixed and behaviour deliberately changed, newest first.
 
+- **Garage**: named saves (stored as share codes), LOAD / LINK / DELETE, and BACKUP / RESTORE to a JSON file.
 - **Share codes**: added SHARE (copy code or link, load code). `DEFAULT_INPUTS` is now the single source of section defaults. See CODEC.md.
 
 - **82fece4**: fixed the AUTO toggle, a crash on changing gear count, clamped-solve results, and summary bugs.

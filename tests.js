@@ -23,7 +23,7 @@ const ctx = { localStorage: { getItem: () => null }, Math, JSON, Number, Array, 
 vm.createContext(ctx);
 vm.runInContext(html.slice(a, b) +
   '\n;this.api={computeGearing,speedAtRpm,parseTyre,clamp,round,' +
-  'encodeInputs,decodeInputs,DEFAULT_INPUTS,CODEC_FIELDS,CODEC_VERSION,' +
+  'encodeInputs,decodeInputs,sanitizeGarage,garageUpsert,garageRemove,garageMerge,DEFAULT_INPUTS,CODEC_FIELDS,CODEC_VERSION,' +
   'GEAR_RATIO_MIN,GEAR_RATIO_MAX,FINAL_DRIVE_MIN,FINAL_DRIVE_MAX};', ctx);
 const G = ctx.api;
 
@@ -251,6 +251,40 @@ for (const t1 of [40, 55, 70]) {
       target1stPct: v.target1stPct, tightnessBias: v.tightnessBias, topGearRatioOverride: v.topGearOverride });
     check('decoded code solves or errors cleanly', !!out.gears || typeof out.error === 'string');
   }
+}
+
+// ── garage ──
+{
+  const names = l => l.map(e => e.name).join(',');
+  let g = [];
+  g = G.garageUpsert(g, '  Supra ', 'AAA', 1);
+  check('upsert trims name', g[0].name === 'Supra');
+  g = G.garageUpsert(g, 'GTR', 'BBB', 2);
+  check('newest first', names(g) === 'GTR,Supra');
+  g = G.garageUpsert(g, 'supra', 'CCC', 3);
+  check('same name (any case) replaces', g.length === 2 && g[0].code === 'CCC' && g[0].name === 'supra');
+  check('blank name ignored', G.garageUpsert(g, '   ', 'X', 4) === g);
+  check('long name truncated', G.garageUpsert([], 'x'.repeat(99), 'A', 1)[0].name.length === 40);
+  check('remove is case-insensitive', names(G.garageRemove(g, 'SUPRA')) === 'GTR');
+
+  const messy = [
+    { name: 'ok', code: 'MQ', savedAt: 5 }, null, 42, { name: 'bad code', code: 'has space', savedAt: 1 },
+    { name: '', code: 'MQ' }, { name: 'nocode' }, { name: 'OK', code: 'Mg', savedAt: 9 }, { name: 'old', code: 'MQ' },
+  ];
+  const clean = G.sanitizeGarage(messy);
+  check('sanitize drops junk, dedupes keeping newest', names(clean) === 'OK,old', names(clean));
+  check('sanitize missing savedAt → 0', clean[1].savedAt === 0);
+  check('sanitize accepts backup object', G.sanitizeGarage({ app: 'gear-os', garage: messy }).length === 2);
+  check('sanitize non-array → empty', G.sanitizeGarage('nope').length === 0 && G.sanitizeGarage(null).length === 0);
+
+  const merged = G.garageMerge(
+    [{ name: 'A', code: 'MQ', savedAt: 10 }, { name: 'B', code: 'MQ', savedAt: 1 }],
+    { garage: [{ name: 'a', code: 'Mg', savedAt: 5 }, { name: 'b', code: 'Mg', savedAt: 7 }, { name: 'C', code: 'MQ', savedAt: 3 }] });
+  check('merge: newer save wins clash', merged.find(e => e.name.toLowerCase() === 'a').code === 'MQ'
+    && merged.find(e => e.name.toLowerCase() === 'b').code === 'Mg');
+  check('merge: adds new names', merged.length === 3);
+  // Garage codes come from encodeInputs, so every one must pass CODE_RE.
+  check('real codes accepted', G.sanitizeGarage([{ name: 'x', code: G.encodeInputs({ ...G.DEFAULT_INPUTS, gearCount: 9 }), savedAt: 1 }]).length === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

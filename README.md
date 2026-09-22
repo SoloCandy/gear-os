@@ -29,6 +29,9 @@ and open it in any browser. No install, no server, no build step.
 > current inputs. Paste one into LOAD CODE, or just open the link. See
 > [docs/CODEC.md](docs/CODEC.md).
 
+> **Garage:** GARAGE saves named setups in this browser. Load one, copy its link, or
+> BACKUP the whole garage to a file and RESTORE it on another device.
+
 ---
 
 ## The Idea: Variable Power Band

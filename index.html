@@ -44,6 +44,13 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
     font-family:var(--font-mono);font-size:12px;padding:5px 8px}
 .share-note{font-family:var(--font-mono);font-size:10px;color:#6b7280;max-width:1400px;width:100%;margin:0 auto}
 .tbtn:disabled{opacity:.4;cursor:default}
+.garage-list{display:flex;flex-direction:column;gap:4px;max-width:1400px;width:100%;margin:0 auto;max-height:240px;overflow-y:auto}
+.garage-item{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid #0f172a;border-radius:2px;padding:6px 8px}
+.garage-item.current{border-color:#e2e8f033;background:#0f172a}
+.garage-info{flex:1;min-width:160px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-family:var(--font-mono);font-size:11px;color:#6b7280}
+.garage-info b{color:#e2e8f0;font-weight:600;overflow-wrap:anywhere}
+.garage-tag{font-size:9px;letter-spacing:1px;color:#4ade80}
+.garage-actions{display:flex;gap:4px}
 @media(max-width:560px){.share-label{width:100%}.share-input{flex-basis:100%}}
 .tbtn{padding:4px 10px;border:1px solid #1e293b;background:transparent;color:#6b7280;
     border-radius:2px;cursor:pointer;font-family:var(--font-mono);font-size:11px;
@@ -283,6 +290,47 @@ function decodeInputs(code){
     if(v!==undefined)out[f.key]=v;
   }
   return out;
+}
+
+// ---- Garage ----
+// Named saves, each stored as a share code, so saves get the codec's
+// versioning, defaults and sanitizing for free. Names are unique
+// (case-insensitive); saving under an existing name replaces it.
+// Newest first. See docs/PERSISTENCE.md.
+const GARAGE_KEY='gearos_garage_v1';
+const GARAGE_NAME_MAX=40;
+const CODE_RE=/^[A-Za-z0-9_-]+$/;
+const garageKey=n=>n.trim().toLowerCase();
+// Accepts parsed JSON (an array, or a backup object {garage:[...]}) and
+// returns a clean list. Drops malformed entries, de-dupes names (keeps newest).
+function sanitizeGarage(data){
+  const arr=Array.isArray(data)?data:Array.isArray(data?.garage)?data.garage:[];
+  const byName=new Map();
+  for(const e of arr){
+    if(!e||typeof e.name!=='string'||typeof e.code!=='string')continue;
+    const name=e.name.trim().slice(0,GARAGE_NAME_MAX);
+    if(!name||!CODE_RE.test(e.code))continue;
+    const savedAt=Number.isFinite(e.savedAt)?e.savedAt:0;
+    const prev=byName.get(garageKey(name));
+    if(!prev||savedAt>=prev.savedAt)byName.set(garageKey(name),{name,code:e.code,savedAt});
+  }
+  return [...byName.values()].sort((x,y)=>y.savedAt-x.savedAt);
+}
+function garageUpsert(list,name,code,now){
+  const n=String(name??'').trim().slice(0,GARAGE_NAME_MAX);
+  if(!n)return list;
+  return [{name:n,code,savedAt:now},...list.filter(e=>garageKey(e.name)!==garageKey(n))];
+}
+function garageRemove(list,name){
+  return list.filter(e=>garageKey(e.name)!==garageKey(name));
+}
+// Restore merges a backup into the current garage. On a name clash the newer save wins.
+function garageMerge(list,incoming){
+  return sanitizeGarage([...list,...sanitizeGarage(incoming)]);
+}
+function loadGarage(){
+  try{const s=localStorage.getItem(GARAGE_KEY);return s?sanitizeGarage(JSON.parse(s)):[];}
+  catch(e){return [];}
 }
 
 // ---- Persistence ----
@@ -859,7 +907,59 @@ function App(){
   };
   const shareCode=encodeInputs({maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,topSpeed,tireRadius,
     tireSize,tireInputMode,topGearOverride,target1stSpeed,target1stPct,target1stMode,tightnessBias});
-  const [shareOpen,setShareOpen]=useState(false);
+  const [panel,setPanel]=useState(null); // 'share' | 'garage' | null
+  const shareOpen=panel==='share';
+  const setShareOpen=v=>setPanel(v?'share':null);
+  const togglePanel=name=>{setPanel(p=>p===name?null:name);setShareMsg(null);setGarageMsg(null);setConfirmDel(null);};
+
+  const [garage,setGarage]=useState(loadGarage);
+  const [saveName,setSaveName]=useState('');
+  const [garageMsg,setGarageMsg]=useState(null); // {ok,text}
+  const [confirmDel,setConfirmDel]=useState(null); // name awaiting SURE?
+  const restoreRef=useRef(null);
+  useEffect(()=>{
+    try{localStorage.setItem(GARAGE_KEY,JSON.stringify(garage));}catch(e){/* private browsing or quota */}
+  },[garage]);
+  const nameTaken=!!saveName.trim()&&garage.some(e=>garageKey(e.name)===garageKey(saveName));
+  const saveToGarage=()=>{
+    const n=saveName.trim();
+    if(!n)return;
+    setGarage(g=>garageUpsert(g,n,shareCode,Date.now()));
+    setGarageMsg({ok:true,text:nameTaken?`Replaced "${n}".`:`Saved "${n}".`});
+    setSaveName('');
+  };
+  const loadFromGarage=e=>{
+    try{applyInputs(decodeInputs(e.code));setGarageMsg({ok:true,text:`Loaded "${e.name}".`});}
+    catch(err){setGarageMsg({ok:false,text:`"${e.name}": ${err.message}`});}
+  };
+  const deleteFromGarage=name=>{
+    if(confirmDel!==name){setConfirmDel(name);return;}
+    setGarage(g=>garageRemove(g,name));setConfirmDel(null);setGarageMsg({ok:true,text:`Deleted "${name}".`});
+  };
+  const garageSummary=code=>{
+    try{const v=decodeInputs(code);return `${v.gearCount} gears · ${dispSpeed(v.topSpeed)} · ${v.maxRpm} rpm`;}
+    catch(e){return 'unreadable code';}
+  };
+  const backupGarage=()=>{
+    try{
+      const blob=new Blob([JSON.stringify({app:'gear-os',garage},null,2)],{type:'application/json'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=`gear-os-garage-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+      setGarageMsg({ok:true,text:`Backed up ${garage.length} setup${garage.length===1?'':'s'}.`});
+    }catch(e){setGarageMsg({ok:false,text:'Backup failed in this browser.'});}
+  };
+  const restoreGarage=file=>{
+    if(!file)return;
+    file.text().then(t=>{
+      const incoming=sanitizeGarage(JSON.parse(t));
+      if(!incoming.length)throw new Error('empty');
+      setGarage(g=>garageMerge(g,incoming));
+      setGarageMsg({ok:true,text:`Restored ${incoming.length} setup${incoming.length===1?'':'s'}. Newer saves win on name clashes.`});
+    }).catch(()=>setGarageMsg({ok:false,text:'Not a GEAR.OS garage backup.'}));
+  };
   const [loadText,setLoadText]=useState('');
   const [shareMsg,setShareMsg]=useState(null); // {ok,text}
   const copyText=(t,label)=>{
@@ -913,7 +1013,9 @@ function App(){
           </div>
           <div className="unit-toggle">
             <button className={`tbtn${shareOpen?' on':''}`} style={{marginRight:6}}
-              onClick={()=>{setShareOpen(o=>!o);setShareMsg(null);}}>SHARE</button>
+              onClick={()=>togglePanel('share')}>SHARE</button>
+            <button className={`tbtn${panel==='garage'?' on':''}`} style={{marginRight:6}}
+              onClick={()=>togglePanel('garage')}>GARAGE</button>
             <button className={`tbtn${!metricUnits?' on':''}`} onClick={()=>setMetricUnits(false)}>IMP</button>
             <button className={`tbtn${metricUnits?' on':''}`} onClick={()=>setMetricUnits(true)}>MET</button>
           </div>
@@ -935,6 +1037,44 @@ function App(){
           </div>
           <div className="share-note" style={shareMsg?{color:shareMsg.ok?'#4ade80':'#f87171'}:undefined}>
             {shareMsg?shareMsg.text:'Loading a code replaces every Engine and Gearbox input. Units and the dyno view are not shared.'}
+          </div>
+        </div>}
+      {panel==='garage'&&
+        <div className="share-panel">
+          <div className="share-row">
+            <span className="share-label">SAVE AS</span>
+            <input className="share-input" placeholder="Name this setup, e.g. Supra 6-speed" maxLength={GARAGE_NAME_MAX}
+              value={saveName} onChange={e=>setSaveName(e.target.value)}
+              onKeyDown={e=>{if(e.key==='Enter')saveToGarage();}}/>
+            <button className="tbtn" disabled={!saveName.trim()} onClick={saveToGarage}>{nameTaken?'REPLACE':'SAVE'}</button>
+          </div>
+          {garage.length===0
+            ?<div className="share-note">No saved setups yet. Name the current one above to save it.</div>
+            :<div className="garage-list">
+              {garage.map(e=>{
+                const current=e.code===shareCode;
+                return <div key={e.name} className={`garage-item${current?' current':''}`}>
+                  <div className="garage-info">
+                    <b>{e.name}</b>{current&&<span className="garage-tag">CURRENT</span>}
+                    <span>{garageSummary(e.code)}</span>
+                  </div>
+                  <div className="garage-actions">
+                    <button className="tbtn" onClick={()=>loadFromGarage(e)}>LOAD</button>
+                    <button className="tbtn" onClick={()=>copyText(location.origin+location.pathname+'#g='+e.code,`Link for "${e.name}"`)}>LINK</button>
+                    <button className="tbtn" style={confirmDel===e.name?{color:'#f87171',borderColor:'#f8717166'}:undefined}
+                      onClick={()=>deleteFromGarage(e.name)}>{confirmDel===e.name?'SURE?':'DELETE'}</button>
+                  </div>
+                </div>;
+              })}
+            </div>}
+          <div className="share-row">
+            <button className="tbtn" disabled={!garage.length} onClick={backupGarage}>BACKUP</button>
+            <button className="tbtn" onClick={()=>restoreRef.current?.click()}>RESTORE</button>
+            <input ref={restoreRef} type="file" accept=".json,application/json" style={{display:'none'}}
+              onChange={e=>{restoreGarage(e.target.files[0]);e.target.value='';}}/>
+            <span className="share-note" style={{width:'auto',margin:0,flex:1,...(garageMsg||shareMsg?{color:(garageMsg||shareMsg).ok?'#4ade80':'#f87171'}:{})}}>
+              {(garageMsg||shareMsg)?.text??'Saves live in this browser only. Use BACKUP to keep a copy or move them to another device.'}
+            </span>
           </div>
         </div>}
       <div className="body-shell">
