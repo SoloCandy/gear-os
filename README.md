@@ -25,6 +25,10 @@ and open it in any browser. No install, no server, no build step.
 > reloading picks up right where you left off. RESET (per sidebar section) clears it back
 > to defaults. See [docs/PERSISTENCE.md](docs/PERSISTENCE.md).
 
+> **Share:** SHARE in the top bar gives a short code or a link (`…/#g=CODE`) for your
+> current inputs. Paste one into LOAD CODE, or just open the link. See
+> [docs/CODEC.md](docs/CODEC.md).
+
 ---
 
 ## The Idea: Variable Power Band

@@ -37,6 +37,14 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .brand b{font-size:16px;letter-spacing:3px;color:#e2e8f0;font-weight:700}
 .brand span{font-size:11px;color:#6b7280}
 .unit-toggle{display:flex;gap:3px}
+.share-panel{border-bottom:1px solid #0f172a;background:#030a1a;padding:10px 16px;display:flex;flex-direction:column;gap:8px}
+.share-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:1400px;width:100%;margin:0 auto}
+.share-label{font-family:var(--font-mono);font-size:10px;letter-spacing:1px;color:#6b7280;width:80px}
+.share-input{flex:1;min-width:0;background:#020617;border:1px solid #1e293b;border-radius:2px;color:#e2e8f0;
+    font-family:var(--font-mono);font-size:12px;padding:5px 8px}
+.share-note{font-family:var(--font-mono);font-size:10px;color:#6b7280;max-width:1400px;width:100%;margin:0 auto}
+.tbtn:disabled{opacity:.4;cursor:default}
+@media(max-width:560px){.share-label{width:100%}.share-input{flex-basis:100%}}
 .tbtn{padding:4px 10px;border:1px solid #1e293b;background:transparent;color:#6b7280;
     border-radius:2px;cursor:pointer;font-family:var(--font-mono);font-size:11px;
     letter-spacing:1px;transition:all .12s;-webkit-tap-highlight-color:transparent}
@@ -194,6 +202,88 @@ const parseTyre=str=>{
   const diameter=rim*25.4+2*(width*aspect/100);
   return{width,aspectRatio:aspect,rimDiameter:rim,diameter,radius:diameter/2};
 };
+
+// ---- Share codes ----
+// Sparse `id:value` list, '|'-joined, URL-safe Base64, led by the codec
+// version. Only fields that differ from DEFAULT_INPUTS are written, and
+// missing fields decode to defaults, so old codes keep working when fields
+// are added. IDS ARE PERMANENT: never reuse one, retire it instead.
+// See docs/CODEC.md. View prefs (units, dyno scale) are deliberately not shared.
+const DEFAULT_INPUTS={
+  maxRpm:8000,autoHp:true,hpRpm:7200,autoTorque:true,torqueRpm:5200,
+  gearCount:6,topSpeed:180,tireRadius:330,tireSize:'',tireInputMode:'size',
+  topGearOverride:null,target1stSpeed:null,target1stPct:null,target1stMode:'mph',
+  tightnessBias:0,
+};
+const CODEC_VERSION=1;
+const CODEC_FIELDS=[
+  {id:1,key:'maxRpm',type:'num',min:1000,max:20000},
+  {id:2,key:'autoHp',type:'bool'},
+  {id:3,key:'hpRpm',type:'num',min:500,max:20000},
+  {id:4,key:'autoTorque',type:'bool'},
+  {id:5,key:'torqueRpm',type:'num',min:500,max:20000},
+  {id:6,key:'gearCount',type:'int',min:2,max:10},
+  {id:7,key:'topSpeed',type:'num',min:1,max:600},        // mph
+  {id:8,key:'tireRadius',type:'num',min:50,max:1000},    // mm
+  {id:9,key:'tireSize',type:'str',maxLen:24},
+  {id:10,key:'tireInputMode',type:'enum',values:['size','radius']},
+  {id:11,key:'topGearOverride',type:'num',nullable:true,min:0.48,max:6},
+  {id:12,key:'target1stSpeed',type:'num',nullable:true,min:1,max:600}, // mph
+  {id:13,key:'target1stPct',type:'num',nullable:true,min:0,max:100},
+  {id:14,key:'target1stMode',type:'enum',values:['mph','pct']},
+  {id:15,key:'tightnessBias',type:'num',min:-100,max:100},
+  // Retired, never reuse: (none)
+];
+const codecEnc=(f,v)=>{
+  if(v==null)return 'n';
+  if(f.type==='bool')return v?'1':'0';
+  if(f.type==='enum')return String(f.values.indexOf(v));
+  if(f.type==='str')return encodeURIComponent(v);
+  return String(round(v,4));
+};
+// Sanitized value, or undefined when the raw text is unusable (caller keeps the default).
+const codecDec=(f,raw)=>{
+  if(raw==='n')return f.nullable?null:undefined;
+  if(f.type==='bool')return raw==='1'?true:raw==='0'?false:undefined;
+  if(f.type==='enum')return f.values[Number(raw)];
+  if(f.type==='str'){try{return decodeURIComponent(raw).slice(0,f.maxLen);}catch(e){return undefined;}}
+  const n=Number(raw);
+  if(raw===''||!Number.isFinite(n))return undefined;
+  const c=clamp(n,f.min,f.max);
+  return f.type==='int'?Math.round(c):c;
+};
+function encodeInputs(inputs){
+  const parts=[CODEC_VERSION];
+  for(const f of CODEC_FIELDS){
+    const enc=codecEnc(f,inputs[f.key]===undefined?DEFAULT_INPUTS[f.key]:inputs[f.key]);
+    if(enc===codecEnc(f,DEFAULT_INPUTS[f.key]))continue;
+    parts.push(`${f.id}:${enc}`);
+  }
+  // URL-safe so a code can ride in a link's #hash untouched.
+  return btoa(parts.join('|')).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+// Accepts a bare code or a full share link. Throws with a user-facing message.
+function decodeInputs(code){
+  let text;
+  try{
+    const b=String(code??'').trim().replace(/^.*#g=/,'').replace(/-/g,'+').replace(/_/g,'/');
+    text=atob(b+'==='.slice((b.length+3)%4));
+  }catch(e){throw new Error('Not a GEAR.OS code.');}
+  const parts=text.split('|');
+  const version=Number(parts[0]);
+  if(!Number.isInteger(version)||version<1)throw new Error('Not a GEAR.OS code.');
+  if(version>CODEC_VERSION)throw new Error('This code is from a newer GEAR.OS. Reload the page and try again.');
+  const out={...DEFAULT_INPUTS};
+  for(let i=1;i<parts.length;i++){
+    const ci=parts[i].indexOf(':');
+    if(ci<0)continue;
+    const f=CODEC_FIELDS.find(x=>x.id===Number(parts[i].slice(0,ci)));
+    if(!f)continue; // unknown id (newer app version), ignored
+    const v=codecDec(f,parts[i].slice(ci+1));
+    if(v!==undefined)out[f.key]=v;
+  }
+  return out;
+}
 
 // ---- Persistence ----
 // Single flat key covering every input (gear-os has no chassis/tune split
@@ -757,13 +847,42 @@ function App(){
   const sidebarWidth=isMobile?280:Math.min(420,Math.max(320,Math.floor(windowWidth*0.25)));
   const togSection=key=>()=>setOpenSections(p=>({...p,[key]:!p[key]}));
 
+  const D=DEFAULT_INPUTS;
   const resetEngine=()=>{
-    setMaxRpm(8000);setAutoHp(true);setHpRpm(7200);setAutoTorque(true);setTorqueRpm(5200);setDynoScale(9);
+    setMaxRpm(D.maxRpm);setAutoHp(D.autoHp);setHpRpm(D.hpRpm);setAutoTorque(D.autoTorque);setTorqueRpm(D.torqueRpm);setDynoScale(9);
   };
+  const applyInputs=v=>{
+    setMaxRpm(v.maxRpm);setAutoHp(v.autoHp);setHpRpm(v.hpRpm);setAutoTorque(v.autoTorque);setTorqueRpm(v.torqueRpm);
+    setGearCount(v.gearCount);setTopSpeed(v.topSpeed);setTireRadius(v.tireRadius);setTireSize(v.tireSize);
+    setTireInputMode(v.tireInputMode);setTopGearOverride(v.topGearOverride);setTarget1stSpeed(v.target1stSpeed);
+    setTarget1stPct(v.target1stPct);setTarget1stMode(v.target1stMode);setTightnessBias(v.tightnessBias);
+  };
+  const shareCode=encodeInputs({maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,topSpeed,tireRadius,
+    tireSize,tireInputMode,topGearOverride,target1stSpeed,target1stPct,target1stMode,tightnessBias});
+  const [shareOpen,setShareOpen]=useState(false);
+  const [loadText,setLoadText]=useState('');
+  const [shareMsg,setShareMsg]=useState(null); // {ok,text}
+  const copyText=(t,label)=>{
+    const fail=()=>setShareMsg({ok:false,text:'Copy blocked. Select the code and copy it by hand.'});
+    try{navigator.clipboard.writeText(t).then(()=>setShareMsg({ok:true,text:`${label} copied.`}),fail);}
+    catch(e){fail();}
+  };
+  const loadCode=code=>{
+    try{applyInputs(decodeInputs(code));setShareMsg({ok:true,text:'Code loaded.'});setLoadText('');return true;}
+    catch(e){setShareMsg({ok:false,text:e.message});return false;}
+  };
+  // A shared link (...#g=CODE) loads once on open, then the hash is cleared so
+  // a reload doesn't clobber later edits.
+  useEffect(()=>{
+    const m=location.hash.match(/^#g=(.+)$/);
+    if(!m)return;
+    loadCode(m[1]);setShareOpen(true);
+    history.replaceState(null,'',location.pathname+location.search);
+  },[]); // eslint-disable-line
   const resetGearbox=()=>{
-    setGearCount(6);setTopSpeed(180);setTireRadius(330);setTireSize('');setTireInputMode('size');
-    setTopGearOverride(null);setTarget1stSpeed(null);
-    setTarget1stPct(null);setTarget1stMode('mph');setTightnessBias(0);
+    setGearCount(D.gearCount);setTopSpeed(D.topSpeed);setTireRadius(D.tireRadius);setTireSize(D.tireSize);setTireInputMode(D.tireInputMode);
+    setTopGearOverride(D.topGearOverride);setTarget1stSpeed(D.target1stSpeed);
+    setTarget1stPct(D.target1stPct);setTarget1stMode(D.target1stMode);setTightnessBias(D.tightnessBias);
   };
 
   const dispSpeed=mph=>metricUnits?`${round(mph*KMH_PER_MPH,1)} km/h`:`${round(mph,1)} mph`;
@@ -793,11 +912,31 @@ function App(){
             </div>
           </div>
           <div className="unit-toggle">
+            <button className={`tbtn${shareOpen?' on':''}`} style={{marginRight:6}}
+              onClick={()=>{setShareOpen(o=>!o);setShareMsg(null);}}>SHARE</button>
             <button className={`tbtn${!metricUnits?' on':''}`} onClick={()=>setMetricUnits(false)}>IMP</button>
             <button className={`tbtn${metricUnits?' on':''}`} onClick={()=>setMetricUnits(true)}>MET</button>
           </div>
         </div>
       </div>
+      {shareOpen&&
+        <div className="share-panel">
+          <div className="share-row">
+            <span className="share-label">YOUR CODE</span>
+            <input className="share-input" readOnly value={shareCode} onFocus={e=>e.target.select()}/>
+            <button className="tbtn" onClick={()=>copyText(shareCode,'Code')}>COPY CODE</button>
+            <button className="tbtn" onClick={()=>copyText(location.origin+location.pathname+'#g='+shareCode,'Link')}>COPY LINK</button>
+          </div>
+          <div className="share-row">
+            <span className="share-label">LOAD CODE</span>
+            <input className="share-input" placeholder="Paste a code or link" value={loadText}
+              onChange={e=>setLoadText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&loadText.trim())loadCode(loadText);}}/>
+            <button className="tbtn" disabled={!loadText.trim()} onClick={()=>loadCode(loadText)}>LOAD</button>
+          </div>
+          <div className="share-note" style={shareMsg?{color:shareMsg.ok?'#4ade80':'#f87171'}:undefined}>
+            {shareMsg?shareMsg.text:'Loading a code replaces every Engine and Gearbox input. Units and the dyno view are not shared.'}
+          </div>
+        </div>}
       <div className="body-shell">
         {sidebarOpen&&isMobile&&
           <div className="backdrop" onClick={()=>setSidebarOpen(false)}/>}

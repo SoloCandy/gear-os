@@ -18,10 +18,12 @@ if (a < 0 || b < 0 || b < a) {
   console.error('Could not locate the solver block in index.html (markers moved?)');
   process.exit(1);
 }
-const ctx = { localStorage: { getItem: () => null }, Math, JSON, Number, Array, String };
+const ctx = { localStorage: { getItem: () => null }, Math, JSON, Number, Array, String,
+  btoa, atob, encodeURIComponent, decodeURIComponent };
 vm.createContext(ctx);
 vm.runInContext(html.slice(a, b) +
   '\n;this.api={computeGearing,speedAtRpm,parseTyre,clamp,round,' +
+  'encodeInputs,decodeInputs,DEFAULT_INPUTS,CODEC_FIELDS,CODEC_VERSION,' +
   'GEAR_RATIO_MIN,GEAR_RATIO_MAX,FINAL_DRIVE_MIN,FINAL_DRIVE_MAX};', ctx);
 const G = ctx.api;
 
@@ -196,6 +198,59 @@ for (const t1 of [40, 55, 70]) {
   const r = run({});
   for (const g of r.gears)
     check(`gear ${g.gear} speed matches ratio*FD`, near(g.speedAtRedline, G.speedAtRpm(8000, g.ratio, r.finalDrive, 330), 1e-9));
+}
+
+// ── share codec ──
+{
+  const D = G.DEFAULT_INPUTS;
+  const ids = G.CODEC_FIELDS.map(f => f.id);
+  check('codec ids unique', new Set(ids).size === ids.length);
+  check('codec covers every default input', Object.keys(D).every(k => G.CODEC_FIELDS.some(f => f.key === k)));
+  const eq = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+  const raw = s => Buffer.from(s).toString('base64');
+  const throws = fn => { try { fn(); return null; } catch (e) { return e.message; } };
+
+  const defCode = G.encodeInputs(D);
+  check('defaults encode to version only', Buffer.from(defCode, 'base64').toString() === String(G.CODEC_VERSION));
+  check('defaults round-trip', eq(G.decodeInputs(defCode), { ...D }));
+
+  const full = {
+    maxRpm: 9500, autoHp: false, hpRpm: 8800, autoTorque: false, torqueRpm: 6100, gearCount: 7,
+    topSpeed: 212.5, tireRadius: 341.3, tireSize: '275/35R20', tireInputMode: 'radius',
+    topGearOverride: 0.72, target1stSpeed: 58, target1stPct: 42, target1stMode: 'pct', tightnessBias: -35,
+  };
+  const code = G.encodeInputs(full);
+  check('full round-trip', eq(G.decodeInputs(code), full), JSON.stringify(G.decodeInputs(code)));
+  check('code is URL-safe', /^[A-Za-z0-9_-]+$/.test(code), code);
+  check('share link accepted', eq(G.decodeInputs('https://x.io/gear-os/#g=' + code), full));
+  check('whitespace tolerated', eq(G.decodeInputs('  ' + code + '\n'), full));
+  check('null field round-trips', G.decodeInputs(G.encodeInputs({ ...full, topGearOverride: null })).topGearOverride === null);
+  check('odd chars in tire size survive',
+    G.decodeInputs(G.encodeInputs({ ...D, tireSize: 'a|b:c 1/2' })).tireSize === 'a|b:c 1/2');
+
+  check('garbage rejected', !!throws(() => G.decodeInputs('%%%not base64%%%')));
+  check('non-code base64 rejected', !!throws(() => G.decodeInputs(raw('hello|1:2'))));
+  check('newer version rejected with message', /newer/.test(throws(() => G.decodeInputs(raw(`${G.CODEC_VERSION + 1}|1:9000`))) || ''));
+
+  const d = G.decodeInputs(raw('1|99:5|1:9000|garbage|6:abc'));
+  check('unknown id ignored', d.maxRpm === 9000);
+  check('bad number falls back to default', d.gearCount === D.gearCount);
+  const c = G.decodeInputs(raw('1|6:40|13:250|1:-5|10:9|2:7'));
+  check('gearCount clamped', c.gearCount === 10);
+  check('pct clamped', c.target1stPct === 100);
+  check('maxRpm clamped', c.maxRpm === 1000);
+  check('bad enum falls back', c.tireInputMode === D.tireInputMode);
+  check('bad bool falls back', c.autoHp === D.autoHp);
+  check('null on non-nullable ignored', G.decodeInputs(raw('1|1:n')).maxRpm === D.maxRpm);
+
+  // Every decoded code must reach the solver without throwing.
+  for (const s of [code, raw('1|6:40|13:250|1:-5'), raw('1|3:1|5:99999')]) {
+    const v = G.decodeInputs(s);
+    const out = G.computeGearing({ maxRpm: v.maxRpm, peakHpRpm: v.hpRpm, peakTorqueRpm: v.torqueRpm,
+      gearCount: v.gearCount, topSpeedMph: v.topSpeed, tireRadius: v.tireRadius, target1stMph: null,
+      target1stPct: v.target1stPct, tightnessBias: v.tightnessBias, topGearRatioOverride: v.topGearOverride });
+    check('decoded code solves or errors cleanly', !!out.gears || typeof out.error === 'string');
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
