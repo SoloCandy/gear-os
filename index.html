@@ -61,7 +61,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
     transition:color .12s,border-color .12s;-webkit-tap-highlight-color:transparent}
 .hamburger.on{color:#e2e8f0;border-color:#e2e8f033}
 .body-shell{display:flex;flex:1;overflow:hidden;position:relative}
-.backdrop{position:absolute;inset:0;background:#00000088;z-index:150}
+.backdrop{position:absolute;inset:0;background:#00000088;z-index:150;transition:opacity .2s ease}
 .sidebar{flex-shrink:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
     border-right:1px solid #0f172a;background:#020617;transition:width .2s ease}
 .sidebar.mobile{position:absolute;top:0;left:0;bottom:0;z-index:200;
@@ -84,7 +84,23 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .sec-body{padding:8px 12px 10px}
 .main-content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .wrap{max-width:1400px;margin:0 auto;padding:24px}
-@media(max-width:768px){.wrap{padding:16px}.topbar-inner{height:auto;padding:10px 16px}}
+@media(max-width:768px){.wrap{padding:16px}.topbar-inner{height:auto;padding:8px 16px}}
+/* Phones: the subtitle is what wrapped the top bar to 3 rows at 320px. */
+@media(max-width:600px){.brand span{display:none}.brand{padding:4px 0}.brand b{letter-spacing:2px}.tbtn{padding:4px 7px;letter-spacing:.5px}.topbar-inner{padding:8px 10px}}
+/* iOS zooms the page when a focused field's text is under 16px. */
+@media(max-width:767px){input.finput,input.share-input{font-size:16px}}
+/* Touch: ~36px targets without changing the desktop look. The AUTO toggle
+   gets its padding cancelled by a matching negative margin so the row layout
+   doesn't move. */
+@media(pointer:coarse){
+  .tbtn{min-height:36px;min-width:36px}
+  .hamburger{min-height:36px;min-width:36px}
+  .stog{padding:13px 12px}
+  .field .auto-tog{padding:10px 8px;margin:-10px -8px}
+  .field .auto-tog input{width:18px;height:18px}
+  .sli::-webkit-slider-thumb{width:20px;height:20px;margin-top:-8.5px}
+  .sli::-moz-range-thumb{width:20px;height:20px}
+}
 .card{background:#020617;border:1px solid #1e293b;border-radius:2px;overflow:hidden;margin-bottom:16px}
 .ch{padding:6px 10px;background:#0a0f1a;border-bottom:1px solid #1e293b;
     font-size:10px;color:#9ca3af;letter-spacing:2px;text-transform:uppercase}
@@ -892,7 +908,17 @@ function App(){
     return()=>window.removeEventListener('resize',check);
   },[]);
 
-  const sidebarWidth=isMobile?280:Math.min(420,Math.max(320,Math.floor(windowWidth*0.25)));
+  // Mobile: 88% of the screen capped at 360 (as SUSP.OS), so small phones keep
+  // a tappable backdrop strip and large phones get the room.
+  const sidebarWidth=isMobile?Math.min(360,Math.floor(windowWidth*0.88)):Math.min(420,Math.max(320,Math.floor(windowWidth*0.25)));
+  const swipeRef=useRef(null);
+  // Escape closes the mobile drawer.
+  useEffect(()=>{
+    if(!isMobile||!sidebarOpen)return;
+    const onKey=e=>{if(e.key==='Escape')setSidebarOpen(false);};
+    window.addEventListener('keydown',onKey);
+    return()=>window.removeEventListener('keydown',onKey);
+  },[isMobile,sidebarOpen]);
   const togSection=key=>()=>setOpenSections(p=>({...p,[key]:!p[key]}));
 
   const D=DEFAULT_INPUTS;
@@ -1078,11 +1104,32 @@ function App(){
           </div>
         </div>}
       <div className="body-shell">
-        {sidebarOpen&&isMobile&&
-          <div className="backdrop" onClick={()=>setSidebarOpen(false)}/>}
-        <div className={`sidebar${isMobile?' mobile':''}`} style={{
+        {/* Always mounted on mobile so it can fade; pointer-events off while closed. */}
+        {isMobile&&
+          <div className="backdrop" onClick={()=>setSidebarOpen(false)}
+            style={{opacity:sidebarOpen?1:0,pointerEvents:sidebarOpen?'auto':'none'}}/>}
+        {/* Mobile: stays mounted and hides by transform + visibility, because a
+            display:none toggle kills the slide. visibility is delayed on close so
+            the drawer is still visible while it slides out, and it keeps a closed
+            drawer out of the tab order. A leftward swipe closes it. */}
+        <div className={`sidebar${isMobile?' mobile':''}`}
+          onTouchStart={isMobile?e=>{
+            // Not from a control: dragging a slider thumb left is a slider move,
+            // and a drag in a text field is a selection. Neither may close the drawer.
+            if(e.target.closest('input,select,textarea,svg')){swipeRef.current=null;return;}
+            const t=e.touches[0];swipeRef.current={x:t.clientX,y:t.clientY,done:false};}:undefined}
+          onTouchMove={isMobile?e=>{
+            const sw=swipeRef.current;if(!sw||sw.done)return;
+            const t=e.touches[0],dx=t.clientX-sw.x,dy=t.clientY-sw.y;
+            if(Math.abs(dy)>30&&Math.abs(dy)>Math.abs(dx)){sw.done=true;return;} // a scroll, not a swipe
+            if(dx<-60&&Math.abs(dx)>Math.abs(dy)*1.5){sw.done=true;setSidebarOpen(false);}
+          }:undefined}
+          style={{
           width:sidebarWidth,
-          ...(isMobile?{transform:sidebarOpen?'translateX(0)':'translateX(-100%)'}:{display:sidebarOpen?'block':'none'})
+          ...(isMobile?{transform:sidebarOpen?'translateX(0)':'translateX(-100%)',
+            visibility:sidebarOpen?'visible':'hidden',
+            transition:sidebarOpen?'transform .2s ease':'transform .2s ease, visibility 0s linear .2s'}
+            :{display:sidebarOpen?'block':'none'})
         }}>
           <div className="sections-row">
             <span>SECTIONS</span>

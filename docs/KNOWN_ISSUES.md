@@ -15,5 +15,12 @@ Only what is still true.
 
 ## Rejected designs
 
+- **`display:none` for the closed mobile drawer.** It looks like a tidy simplification, but a
+  transform can't animate out of `display:none`, so the slide stops working. The drawer
+  stays mounted and hides with a delayed `visibility:hidden` instead.
+- **Letting a swipe start on a control.** The swipe-to-close ignores touches that start on
+  `input`, `select`, `textarea` or the dyno `svg`. Without that, dragging a slider or a
+  dyno marker left would close the drawer mid-drag.
+
 - **% Powerband as a Spacing Curve Bias AUTO mode** (0aaa553, reverted in 3a6ffd2).
   The reasons were not recorded at the time. Fill them in if they are known.
