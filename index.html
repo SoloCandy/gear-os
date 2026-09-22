@@ -485,8 +485,12 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
 
   // If a gear ratio or Final Drive had to clamp to Forza's range, one or both
   // targets may come up short — check each directly rather than trusting `feasible`.
+  // An override that moves top speed is the user's choice, not a miss: it's
+  // reported as topSpeedOverridden instead, and doesn't make the solve infeasible.
   const actualTopSpeed=gears[N-1].speedAtRedline;
-  const topSpeedMissed=Math.abs(actualTopSpeed-topSpeedMph)>Math.max(0.5,topSpeedMph*0.01);
+  const topSpeedOff=Math.abs(actualTopSpeed-topSpeedMph)>Math.max(0.5,topSpeedMph*0.01);
+  const topSpeedOverridden=topGearRatioOverride!=null&&topSpeedOff;
+  const topSpeedMissed=topGearRatioOverride==null&&topSpeedOff;
   const actualFirstGearSpeed=gears[0].speedAtRedline;
   const firstGearMissed=target1stMph!=null&&Math.abs(actualFirstGearSpeed-target1stMph)>Math.max(0.5,target1stMph*0.01);
 
@@ -497,16 +501,18 @@ function computeGearing({maxRpm,peakHpRpm,peakTorqueRpm,gearCount,topSpeedMph,ti
   // measured against the engine's actual Peak Torque RPM, even if a solved
   // startDropRpm (for Target 1st Gear Speed) lands somewhere else.
   // Derived from the final ratios, not the landingRpm targets, so it stays
-  // true when a ratio was clamped or the top gear was overridden.
+  // true when a ratio was clamped or the top gear was overridden. Not clamped:
+  // >100% means the shift lands below Peak Torque RPM, <0% above Max RPM
+  // (an overridden top gear taller than the gear before it).
   const shifts=[];
   for(let g=1;g<N;g++){
     const actualLandingRpm=maxRpm*gears[g].ratio/gears[g-1].ratio;
-    const pct=clamp((maxRpm-actualLandingRpm)/(maxRpm-peakTorqueRpm)*100,0,100);
+    const pct=(maxRpm-actualLandingRpm)/(maxRpm-peakTorqueRpm)*100;
     shifts.push({from:g,to:g+1,landingRpm:actualLandingRpm,powerBandPct:pct});
   }
 
   return {finalDrive,gears,shifts,feasible:!topSpeedMissed&&!firstGearMissed,
-    actualTopSpeed,actualFirstGearSpeed,topSpeedMissed,firstGearMissed,
+    actualTopSpeed,actualFirstGearSpeed,topSpeedMissed,topSpeedOverridden,firstGearMissed,
     startDropRpm,peakHpRpm,peakTorqueRpm};
 }
 
@@ -1329,12 +1335,12 @@ function App(){
                   Solved to hit {dispSpeed(topSpeed)} at redline in top gear
                   {target1stMode==='mph'&&target1stSpeed!=null&&<React.Fragment> and {dispSpeed(target1stSpeed)} in 1st gear</React.Fragment>}.
                 </div>
-                {topGearOverride!=null&&result.topSpeedMissed&&
+                {result.topSpeedOverridden&&
                   <div className="hint" style={{marginTop:4}}>
                     Top Gear Ratio is manually overridden — top gear reaches {dispSpeed(result.actualTopSpeed)}
                     {' '}instead of the {dispSpeed(topSpeed)} target. Expected — that's now under your control, not a solve failure.
                   </div>}
-                {((result.topSpeedMissed&&topGearOverride==null)||result.firstGearMissed)&&(()=>{
+                {(result.topSpeedMissed||result.firstGearMissed)&&(()=>{
                   const fit=maxFittingGears(solveArgs);
                   return <div className="warn">
                     {fit!=null&&<div style={{marginBottom:6}}>
@@ -1344,11 +1350,11 @@ function App(){
                     Couldn't fit every ratio inside Forza's {GEAR_RATIO_MIN.toFixed(2)}–{GEAR_RATIO_MAX.toFixed(2)}
                     {' '}gear ratio and {FINAL_DRIVE_MIN.toFixed(2)}–{FINAL_DRIVE_MAX.toFixed(2)} Final Drive ranges
                     {' '}while hitting every target:
-                    {result.topSpeedMissed&&topGearOverride==null&&
+                    {result.topSpeedMissed&&
                       <div>Top gear reaches {dispSpeed(result.actualTopSpeed)} instead of {dispSpeed(topSpeed)}.</div>}
                     {result.firstGearMissed&&
                       <div>1st gear reaches {dispSpeed(result.actualFirstGearSpeed)} instead of {dispSpeed(target1stSpeed)}.</div>}
-                    {result.topSpeedMissed&&topGearOverride==null&&result.actualTopSpeed>topSpeed&&
+                    {result.topSpeedMissed&&result.actualTopSpeed>topSpeed&&
                       <div>Top gear is too tall, so the car will likely run out of power before redline and the last shift barely drops the revs.</div>}
                     {fit==null&&'Try a different target speed, gear count, or tire radius.'}
                   </div>;
@@ -1369,8 +1375,9 @@ function App(){
                         <div className="grow-shift">
                           {shift&&<React.Fragment>
                             <span className="rl" style={{whiteSpace:'nowrap'}}>{Math.round(shift.landingRpm)} rpm</span>
-                            <span className="pbar"><span className="pbar-fill" style={{width:round(shift.powerBandPct,0)+'%'}}/></span>
-                            <span className="ru" style={{marginLeft:0,whiteSpace:'nowrap'}}>{round(shift.powerBandPct,0)}%</span>
+                            <span className="pbar"><span className="pbar-fill" style={{width:clamp(round(shift.powerBandPct,0),0,100)+'%'}}/></span>
+                            <span className="ru" style={{marginLeft:0,whiteSpace:'nowrap',...(shift.powerBandPct>100.5||shift.powerBandPct<-0.5?{color:'#f59e0b'}:{})}}
+                              title={shift.powerBandPct>100.5?'Lands below Peak Torque RPM':shift.powerBandPct<-0.5?'Lands above Max RPM':undefined}>{round(shift.powerBandPct,0)}%</span>
                           </React.Fragment>}
                         </div>
                         <div className="grow-speed">{dispSpeed(g.speedAtRedline)}</div>

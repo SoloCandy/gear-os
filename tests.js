@@ -169,6 +169,25 @@ for (const t1 of [40, 55, 70]) {
   check('override clamps high', c.gears[5].ratio === G.GEAR_RATIO_MAX);
   const c2 = run({ topGearRatioOverride: 0.01 });
   check('override clamps low', c2.gears[5].ratio === G.GEAR_RATIO_MIN);
+  // Regression: an override that moves top speed is the user's choice, not a solve miss.
+  check('override: not a miss', !r.topSpeedMissed && r.feasible);
+  check('override: flagged as overridden', r.topSpeedOverridden && r.actualTopSpeed > base.actualTopSpeed);
+  check('no override: not flagged', !base.topSpeedOverridden);
+  const same = run({ topGearRatioOverride: base.gears[5].ratio });
+  check('override equal to solve: not flagged', !same.topSpeedOverridden && same.feasible);
+}
+
+// ── % Power Band Used is reported unclamped ──
+{
+  // Regression: a solved 1st->2nd landing below Peak Torque RPM read as 100%.
+  const r = run({ target1stMph: 25 });
+  const s = r.shifts[0];
+  check('below band: landing under torque peak', s.landingRpm < 5000, `got ${s.landingRpm}`);
+  check('below band: pct over 100', s.powerBandPct > 100, `got ${s.powerBandPct}`);
+  check('below band: pct matches formula', near(s.powerBandPct, (8000 - s.landingRpm) / 3000 * 100, 1e-9));
+  // Override taller than gear N-1 lands above redline -> negative.
+  const o = run({ topGearRatioOverride: 6 });
+  check('above redline: pct negative', o.shifts[4].landingRpm > 8000 && o.shifts[4].powerBandPct < 0);
 }
 
 // ── clamping / infeasible extremes ──
@@ -189,7 +208,7 @@ for (const t1 of [40, 55, 70]) {
     const tgt = o.topSpeedMph ?? 180;
     check(`${n}: topSpeedMissed honest`,
       r.topSpeedMissed === (Math.abs(r.actualTopSpeed - tgt) > Math.max(0.5, tgt * 0.01)));
-    for (const s of r.shifts) check(`${n}: pct within 0..100`, s.powerBandPct >= 0 && s.powerBandPct <= 100);
+    for (const s of r.shifts) check(`${n}: pct matches landing`, near(s.powerBandPct, (8000 - s.landingRpm) / (8000 - (o.peakTorqueRpm ?? 5000)) * 100, 1e-9));
   }
 }
 

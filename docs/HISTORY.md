@@ -2,6 +2,8 @@
 
 Bugs fixed and behaviour deliberately changed, newest first.
 
+- **Top Gear override no longer counts as a miss**: an override that moves top speed set `topSpeedMissed` and made `feasible` false, even though the user chose it. It is now reported as `topSpeedOverridden`, and `topSpeedMissed` covers only solve failures.
+- **% Power Band Used is no longer clamped to 0–100**: a first shift landing below Peak Torque RPM (from a Target 1st Gear Speed solve) showed 100%, which hid it. The value now reads over 100% there, and below 0% when an overridden top gear lands above Max RPM. Both show in amber. The bar is still capped at 0–100.
 - **Too-many-gears warning**: when the gear count can't fit Forza's limits, the warning now names the most gears that fit and has a USE N GEARS button. Top gear keeps missing the target in that case (decided, see KNOWN_ISSUES). Also fixed a negative dyno `<rect>` height while the graph is unmeasured.
 - **Mobile layout**: ported SUSP.OS's drawer fixes. The drawer is 88% of the screen (capped at 360px), slides out
   instead of popping, is kept out of the tab order when closed, and closes on a leftward swipe, Escape or a backdrop tap.

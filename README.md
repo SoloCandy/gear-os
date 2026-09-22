@@ -82,6 +82,10 @@ shifts land closer to redline, leaving less band ahead — this percentage shrin
 gears to high gears by design, even though those later gears are the ones staying closer
 to peak power.
 
+The value isn't clamped. Over 100% means the shift lands below Peak Torque RPM (possible
+when a Target 1st Gear Speed solve moves the first shift), and under 0% means it lands
+above Max RPM (an overridden top gear taller than the gear before it). Both show in amber.
+
 ---
 
 An **IMP / MET** toggle in the top-right of the header switches Desired Top Speed and every
