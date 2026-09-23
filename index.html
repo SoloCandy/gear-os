@@ -44,6 +44,15 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
     font-family:var(--font-mono);font-size:12px;padding:5px 8px}
 .share-note{font-family:var(--font-mono);font-size:10px;color:#6b7280;max-width:1400px;width:100%;margin:0 auto}
 .tbtn:disabled{opacity:.4;cursor:default}
+.pick-box{display:flex;flex-direction:column;gap:6px;max-width:1400px;width:100%;margin:0 auto;
+    border:1px solid #1e293b;border-radius:2px;padding:8px}
+.pick-part{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;cursor:pointer;
+    font-family:var(--font-mono);font-size:11px;color:#6b7280;padding:4px 6px;border-radius:2px;
+    border:1px solid transparent}
+.pick-part.on{border-color:#e2e8f033;background:#0f172a}
+.pick-part input{accent-color:#4ade80;width:14px;height:14px;flex:none;align-self:center}
+.pick-part b{color:#e2e8f0;font-weight:600;letter-spacing:1px;min-width:78px}
+.pick-part em{font-style:normal;font-size:9px;letter-spacing:1px;color:#475569}
 .garage-list{display:flex;flex-direction:column;gap:4px;max-width:1400px;width:100%;margin:0 auto;max-height:240px;overflow-y:auto}
 .garage-item{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid #0f172a;border-radius:2px;padding:6px 8px}
 .garage-item.current{border-color:#e2e8f033;background:#0f172a}
@@ -306,6 +315,34 @@ function decodeInputs(code){
     if(v!==undefined)out[f.key]=v;
   }
   return out;
+}
+
+// ---- Share parts ----
+// A loaded code can be applied in pieces, so someone can take a friend's
+// engine without losing their own gearbox. Every DEFAULT_INPUTS key belongs
+// to exactly one part (guarded by tests) - a new input must be added here too.
+const SHARE_PARTS=[
+  {id:'engine',label:'ENGINE',keys:['maxRpm','autoHp','hpRpm','autoTorque','torqueRpm']},
+  {id:'topSpeed',label:'DESIRED TOP SPEED',keys:['topSpeed']},
+  {id:'gearbox',label:'GEARBOX',keys:['gearCount','tireRadius','tireSize','tireInputMode',
+    'topGearOverride','target1stSpeed','target1stPct','target1stMode','tightnessBias']},
+];
+// Current inputs with only the selected parts taken from the decoded code.
+// `parts` is a {partId:bool} map; an empty or missing map changes nothing.
+function mergeInputs(current,incoming,parts){
+  const out={...current};
+  for(const p of SHARE_PARTS){
+    if(!parts||!parts[p.id])continue;
+    for(const k of p.keys)out[k]=incoming[k];
+  }
+  return out;
+}
+// True when a part of the incoming code differs from what is loaded now, so
+// the UI can mark which parts actually carry a change.
+function partDiffers(current,incoming,partId){
+  const p=SHARE_PARTS.find(x=>x.id===partId);
+  if(!p)return false;
+  return p.keys.some(k=>current[k]!==incoming[k]);
 }
 
 // ---- Garage ----
@@ -950,8 +987,9 @@ function App(){
     setTireInputMode(v.tireInputMode);setTopGearOverride(v.topGearOverride);setTarget1stSpeed(v.target1stSpeed);
     setTarget1stPct(v.target1stPct);setTarget1stMode(v.target1stMode);setTightnessBias(v.tightnessBias);
   };
-  const shareCode=encodeInputs({maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,topSpeed,tireRadius,
-    tireSize,tireInputMode,topGearOverride,target1stSpeed,target1stPct,target1stMode,tightnessBias});
+  const currentInputs={maxRpm,autoHp,hpRpm,autoTorque,torqueRpm,gearCount,topSpeed,tireRadius,
+    tireSize,tireInputMode,topGearOverride,target1stSpeed,target1stPct,target1stMode,tightnessBias};
+  const shareCode=encodeInputs(currentInputs);
   const [panel,setPanel]=useState(null); // 'share' | 'garage' | null
   const shareOpen=panel==='share';
   const setShareOpen=v=>setPanel(v?'share':null);
@@ -1012,16 +1050,41 @@ function App(){
     try{navigator.clipboard.writeText(t).then(()=>setShareMsg({ok:true,text:`${label} copied.`}),fail);}
     catch(e){fail();}
   };
-  const loadCode=code=>{
-    try{applyInputs(decodeInputs(code));setShareMsg({ok:true,text:'Code loaded.'});setLoadText('');return true;}
-    catch(e){setShareMsg({ok:false,text:e.message});return false;}
+  // A code is staged, not applied: the pane offers its parts (engine, top
+  // speed, gearbox) so a shared setup can be taken piecemeal. Nothing on
+  // screen changes until APPLY.
+  const [pending,setPending]=useState(null); // {inputs,from:'link'|'paste'}
+  const [parts,setParts]=useState({engine:true,topSpeed:true,gearbox:true});
+  // The ticks are always on screen, so a load never moves them: what the
+  // user set before pasting is what gets taken.
+  const stageCode=(code,from)=>{
+    try{
+      const v=decodeInputs(code);
+      setPending({inputs:v,from});
+      setShareMsg(null);
+      return true;
+    }catch(e){setPending(null);setShareMsg({ok:false,text:e.message});return false;}
   };
-  // A shared link (...#g=CODE) loads once on open, then the hash is cleared so
-  // a reload doesn't clobber later edits.
+  const applyPending=()=>{
+    if(!pending)return;
+    const chosen=SHARE_PARTS.filter(p=>parts[p.id]);
+    if(!chosen.length){setShareMsg({ok:false,text:'Pick at least one part to load.'});return;}
+    applyInputs(mergeInputs(currentInputs,pending.inputs,parts));
+    setShareMsg({ok:true,text:`Loaded ${chosen.map(p=>p.label.toLowerCase()).join(' + ')}.`});
+    setPending(null);setLoadText('');
+  };
+  const partSummary=(id,v)=>{
+    if(id==='engine')return `${v.maxRpm} rpm redline · torque ${v.autoTorque?'auto':v.torqueRpm+' rpm'} · hp ${v.autoHp?'auto':v.hpRpm+' rpm'}`;
+    if(id==='topSpeed')return dispSpeed(v.topSpeed);
+    return `${v.gearCount} gears · ${v.tireInputMode==='size'&&v.tireSize?v.tireSize:round(v.tireRadius,1)+' mm'}`
+      +(v.topGearOverride?` · top gear ${v.topGearOverride}`:'');
+  };
+  // A shared link (...#g=CODE) stages once on open, then the hash is cleared
+  // so a reload doesn't restage over later edits.
   useEffect(()=>{
     const m=location.hash.match(/^#g=(.+)$/);
     if(!m)return;
-    loadCode(m[1]);setShareOpen(true);
+    stageCode(m[1],'link');setShareOpen(true);
     history.replaceState(null,'',location.pathname+location.search);
   },[]); // eslint-disable-line
   const resetGearbox=()=>{
@@ -1078,11 +1141,36 @@ function App(){
           <div className="share-row">
             <span className="share-label">LOAD CODE</span>
             <input className="share-input" placeholder="Paste a code or link" value={loadText}
-              onChange={e=>setLoadText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&loadText.trim())loadCode(loadText);}}/>
-            <button className="tbtn" disabled={!loadText.trim()} onClick={()=>loadCode(loadText)}>LOAD</button>
+              onChange={e=>setLoadText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&loadText.trim())stageCode(loadText,'paste');}}/>
+            <button className="tbtn" disabled={!loadText.trim()} onClick={()=>stageCode(loadText,'paste')}>LOAD</button>
+          </div>
+          <div className="pick-box">
+            <div className="share-note" style={{margin:0}}>
+              {pending
+                ?(pending.from==='link'?'This link carries a setup. Ticked parts load, the rest keep your values:':'This code is ready. Ticked parts load, the rest keep your values:')
+                :'Parts to take from the next code you load:'}
+            </div>
+            {SHARE_PARTS.map(p=>{
+              const on=!!parts[p.id];
+              const same=pending&&!partDiffers(currentInputs,pending.inputs,p.id);
+              return(
+                <label key={p.id} className={`pick-part${on?' on':''}`}>
+                  <input type="checkbox" checked={on}
+                    onChange={()=>{setParts(x=>({...x,[p.id]:!x[p.id]}));setShareMsg(null);}}/>
+                  <b>{p.label}</b>
+                  <span>{partSummary(p.id,pending?pending.inputs:currentInputs)}</span>
+                  {pending?(same?<em>same as yours</em>:null):<em>yours now</em>}
+                </label>
+              );
+            })}
+            {pending&&
+              <div className="share-row" style={{gap:6}}>
+                <button className="tbtn on" onClick={applyPending}>APPLY SELECTED</button>
+                <button className="tbtn" onClick={()=>{setPending(null);setShareMsg(null);}}>DISCARD</button>
+              </div>}
           </div>
           <div className="share-note" style={shareMsg?{color:shareMsg.ok?'#4ade80':'#f87171'}:undefined}>
-            {shareMsg?shareMsg.text:'Loading a code replaces every Engine and Gearbox input. Units and the dyno view are not shared.'}
+            {shareMsg?shareMsg.text:'A loaded code replaces only the parts you tick. Units and the dyno view are not shared.'}
           </div>
         </div>}
       {panel==='garage'&&

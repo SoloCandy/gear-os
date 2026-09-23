@@ -24,6 +24,7 @@ vm.createContext(ctx);
 vm.runInContext(html.slice(a, b) +
   '\n;this.api={computeGearing,maxFittingGears,speedAtRpm,parseTyre,clamp,round,' +
   'encodeInputs,decodeInputs,sanitizeGarage,garageUpsert,garageRemove,garageMerge,DEFAULT_INPUTS,CODEC_FIELDS,CODEC_VERSION,' +
+  'SHARE_PARTS,mergeInputs,partDiffers,' +
   'GEAR_RATIO_MIN,GEAR_RATIO_MAX,FINAL_DRIVE_MIN,FINAL_DRIVE_MAX};', ctx);
 const G = ctx.api;
 
@@ -317,6 +318,44 @@ for (const t1 of [40, 55, 70]) {
   // Miss caused by the target itself (no gear count fixes it) → null
   check('unfixable miss → null', G.maxFittingGears({ ...BASE, gearCount: 6, topSpeedMph: 20 }) === null);
   check('2 gears → null (nothing lower)', G.maxFittingGears({ ...BASE, gearCount: 2 }) === null);
+}
+
+
+// ── share parts: load a code piecemeal ──
+{
+  const D = G.DEFAULT_INPUTS;
+  const allKeys = G.SHARE_PARTS.flatMap(p => p.keys);
+  check('parts cover every default input', Object.keys(D).every(k => allKeys.includes(k)));
+  check('no key in two parts', new Set(allKeys).size === allKeys.length);
+  check('no stray keys', allKeys.every(k => k in D));
+
+  const mine = { ...D };
+  const theirs = { ...D, maxRpm: 9500, autoHp: false, hpRpm: 9000, topSpeed: 240, gearCount: 8, tightnessBias: 40 };
+
+  const engineOnly = G.mergeInputs(mine, theirs, { engine: true });
+  check('engine only: takes their engine', engineOnly.maxRpm === 9500 && engineOnly.hpRpm === 9000);
+  check('engine only: keeps my gearbox', engineOnly.gearCount === D.gearCount && engineOnly.tightnessBias === D.tightnessBias);
+  check('engine only: keeps my top speed', engineOnly.topSpeed === D.topSpeed);
+
+  const gbox = G.mergeInputs(mine, theirs, { gearbox: true });
+  check('gearbox only: takes their gearbox', gbox.gearCount === 8 && gbox.tightnessBias === 40);
+  check('gearbox only: keeps my engine', gbox.maxRpm === D.maxRpm);
+  check('top speed is its own part', gbox.topSpeed === D.topSpeed
+    && G.mergeInputs(mine, theirs, { topSpeed: true }).topSpeed === 240);
+
+  const all = G.mergeInputs(mine, theirs, { engine: true, topSpeed: true, gearbox: true });
+  check('all parts = whole code', Object.keys(D).every(k => all[k] === theirs[k]));
+  check('no parts = unchanged', Object.keys(D).every(k => G.mergeInputs(mine, theirs, {})[k] === mine[k]));
+  check('missing parts map = unchanged', G.mergeInputs(mine, theirs).maxRpm === D.maxRpm);
+  check('merge does not mutate current', mine.maxRpm === D.maxRpm);
+
+  check('partDiffers: engine changed', G.partDiffers(mine, theirs, 'engine'));
+  check('partDiffers: same engine is false', !G.partDiffers(mine, { ...mine }, 'engine'));
+  check('partDiffers: unknown part is false', !G.partDiffers(mine, theirs, 'nope'));
+  // A round trip through the codec must survive the part split unchanged.
+  const rt = G.decodeInputs(G.encodeInputs(theirs));
+  check('decoded code merges identically', Object.keys(D).every(k =>
+    G.mergeInputs(mine, rt, { engine: true, topSpeed: true, gearbox: true })[k] === theirs[k]));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

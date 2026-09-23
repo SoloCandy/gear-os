@@ -47,6 +47,21 @@ URL-safe Base64( "<version>|<id>:<value>|<id>:<value>…" )
 
 Enum values are stored by index. **Append new values only**; never reorder.
 
+## Parts
+
+A decoded code is applied in parts, so a shared setup can be taken piecemeal
+(`SHARE_PARTS` / `mergeInputs` in `index.html`). Every field belongs to exactly
+one part — a new field must be added to one, and the tests fail otherwise.
+
+| Part | Fields |
+|---|---|
+| `engine` | maxRpm, autoHp, hpRpm, autoTorque, torqueRpm |
+| `topSpeed` | topSpeed |
+| `gearbox` | gearCount, tireRadius, tireSize, tireInputMode, topGearOverride, target1stSpeed, target1stPct, target1stMode, tightnessBias |
+
+Parts are a UI grouping, not part of the wire format: a code always carries
+every field, and which parts get applied is the viewer's choice.
+
 ## Not shared
 
 `metricUnits` and `dynoScale` are view preferences for each viewer, not part of the gearing.

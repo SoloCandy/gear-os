@@ -10,6 +10,7 @@ Bugs fixed and behaviour deliberately changed, newest first.
   The top bar drops the subtitle under 600px (116px to 53px tall at 390px wide). Text fields are 16px under
   768px so iOS doesn't zoom on focus. On touch screens buttons, section headers and AUTO toggles are ≥ 36px and
   slider thumbs are 20px. None of this changes the desktop look.
+- **Load a code in parts**: a pasted code or an opened `#g=` link no longer overwrites everything on arrival. It is staged in the SHARE pane with ENGINE / DESIRED TOP SPEED / GEARBOX tickboxes and applies only on APPLY SELECTED. The tickboxes are always on screen (showing your current values until a code is staged) and a load never moves them, so the choice made before pasting is the one that applies. Previously opening a link silently replaced every input.
 - **Garage**: named saves (stored as share codes), LOAD / LINK / DELETE, and BACKUP / RESTORE to a JSON file.
 - **Share codes**: added SHARE (copy code or link, load code). `DEFAULT_INPUTS` is now the single source of section defaults. See CODEC.md.
 

@@ -26,8 +26,11 @@ and open it in any browser. No install, no server, no build step.
 > to defaults. See [docs/PERSISTENCE.md](docs/PERSISTENCE.md).
 
 > **Share:** SHARE in the top bar gives a short code or a link (`…/#g=CODE`) for your
-> current inputs. Paste one into LOAD CODE, or just open the link. See
-> [docs/CODEC.md](docs/CODEC.md).
+> current inputs. Paste one into LOAD CODE, or just open the link. Either way the code is
+> staged, not applied: the pane always shows what a load would take — ENGINE, DESIRED TOP
+> SPEED, GEARBOX — so you can set the ticks before or after pasting, then APPLY SELECTED.
+> Parts you leave unticked keep your own values, so you can take a friend's engine without
+> losing your gearbox. See [docs/CODEC.md](docs/CODEC.md).
 
 > **Garage:** GARAGE saves named setups in this browser. Load one, copy its link, or
 > BACKUP the whole garage to a file and RESTORE it on another device.
